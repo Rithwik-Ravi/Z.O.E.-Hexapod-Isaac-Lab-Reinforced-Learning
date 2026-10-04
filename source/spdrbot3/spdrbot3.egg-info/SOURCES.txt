@@ -1,0 +1,10 @@
+pyproject.toml
+setup.py
+spdrbot3/__init__.py
+spdrbot3/ui_extension_example.py
+spdrbot3.egg-info/PKG-INFO
+spdrbot3.egg-info/SOURCES.txt
+spdrbot3.egg-info/dependency_links.txt
+spdrbot3.egg-info/not-zip-safe
+spdrbot3.egg-info/requires.txt
+spdrbot3.egg-info/top_level.txt
