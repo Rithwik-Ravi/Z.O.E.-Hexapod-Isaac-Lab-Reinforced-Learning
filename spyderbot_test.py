@@ -52,6 +52,11 @@ my_world.scene.add_default_ground_plane(
             restitution=0.01,
         )
 
+try:
+    set_camera_view(eye=[1.0, 1.0, 0.6], target=[0.0, 0.0, 0.25])
+except Exception:
+    pass
+
 # --- Joint Configuration ---
 # Defines the mapping of leg names to their corresponding joint indices
 legs = {
