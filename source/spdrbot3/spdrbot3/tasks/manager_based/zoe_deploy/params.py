@@ -68,7 +68,7 @@ class ZoeRewardParams:
     feet_air_time_threshold: float = 0.15  # seconds
     fewer_than_3_feet_contact: float = -0.5
     undesired_contacts: float = -1.0
-    base_height_l2: float = -5.0
+    base_height_l2: float = -50.0
     flat_orientation_l2_flat: float = -0.5
     flat_orientation_l2_terrain: float = 0.0
     lin_vel_z_l2_flat: float = -2.0
