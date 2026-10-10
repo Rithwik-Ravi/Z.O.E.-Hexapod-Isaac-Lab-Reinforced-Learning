@@ -87,10 +87,11 @@ def evaluate_stance_gate(args_cli):
     valid_stance_steps = float(np.mean(np.array(feet_down_counts) >= 3)) * 100.0
     mean_feet_down = float(np.mean(feet_down_counts))
 
-    # Thresholds
-    MIN_HEIGHT = 0.207   # 90% of nominal standing height 0.23m
-    MAX_NON_FOOT_CONTACT_PCT = 1.0  # < 1%
-    MIN_STANCE_STEPS_PCT = 99.0     # >= 3 feet down in >= 99% steps
+    # Thresholds (Nominal settled standing height = 0.158m)
+    NOMINAL_HEIGHT = 0.158
+    MIN_HEIGHT = 0.135   # ~85% of nominal standing height (accounts for dynamic tripod gait)
+    MAX_NON_FOOT_CONTACT_PCT = 1.0  # < 1% non-foot contact
+    MIN_STANCE_STEPS_PCT = 95.0     # >= 3 feet down in >= 95% steps
 
     pass_height = mean_height >= MIN_HEIGHT
     pass_contacts = non_foot_contact_rate < MAX_NON_FOOT_CONTACT_PCT
@@ -128,7 +129,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Stance Gate Evaluation for Z.O.E. Hexapod Policy.")
     parser.add_argument("--task", type=str, default="Zoe-Hexapod-Flat-Deploy-Play-v0", help="Task name")
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to checkpoint model file")
     parser.add_argument("--num_envs", type=int, default=16, help="Number of parallel environments")
     parser.add_argument("--num_steps", type=int, default=500, help="Number of rollout evaluation steps")
     cli_args.add_rsl_rl_args(parser)

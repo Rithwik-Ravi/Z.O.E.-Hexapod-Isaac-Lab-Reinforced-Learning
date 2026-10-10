@@ -253,7 +253,7 @@ class EventCfg:
         func=zoe_mdp.reset_root_near_ground,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.1, 0.1), "y": (-0.1, 0.1), "z": (0.25, 0.27), "yaw": (-math.pi, math.pi)},
+            "pose_range": {"x": (-0.1, 0.1), "y": (-0.1, 0.1), "z": (0.17, 0.19), "yaw": (-math.pi, math.pi)},
             "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},
         },
     )

@@ -70,7 +70,7 @@ ZOE_HEXAPOD_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.25),  # Spawn height near standing ground contact (~0.23-0.25m)
+        pos=(0.0, 0.0, 0.18),  # Spawn height 2cm above standing ground contact (settled height: 0.158m)
         rot=(0.0, 0.0, 0.0, 1.0),
         joint_pos={
             ".*base_link_v1_Revolute.*": DEFAULT_COXA_POS,  # Coxa joints (legs 1-6)

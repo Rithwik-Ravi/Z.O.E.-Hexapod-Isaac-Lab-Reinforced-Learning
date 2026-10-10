@@ -29,7 +29,7 @@ def reset_root_near_ground(
 
     x_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("x", (0.0, 0.0))).to(env.device)
     y_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("y", (0.0, 0.0))).to(env.device)
-    z_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("z", (0.25, 0.27))).to(env.device)
+    z_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("z", (0.17, 0.19))).to(env.device)
 
     # Spread robots assigned to the same tile across a 3x3 sub-grid (-0.6m to +0.6m) on the platform
     env_idx = env_ids % 9

@@ -77,7 +77,7 @@ class ZoeRewardParams:
 
 @dataclass
 class ZoeParams:
-    STANDING_BASE_HEIGHT: float = 0.23
+    STANDING_BASE_HEIGHT: float = 0.158
     commands: ZoeCommandParams = field(default_factory=ZoeCommandParams)
     obs_noise: ZoeObsNoiseParams = field(default_factory=ZoeObsNoiseParams)
     obs_scale: ZoeObsScaleParams = field(default_factory=ZoeObsScaleParams)
