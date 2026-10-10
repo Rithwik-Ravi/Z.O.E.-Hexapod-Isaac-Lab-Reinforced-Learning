@@ -292,10 +292,16 @@ class RewardsCfg:
         func=mdp.is_terminated,
         weight=ZOE_PARAMS.rewards.termination_penalty,
     )
-    base_height_l2 = RewTerm(
-        func=zoe_mdp.base_height_l2,
-        weight=ZOE_PARAMS.rewards.base_height_l2,
-        params={"target_height": ZOE_PARAMS.STANDING_BASE_HEIGHT},
+    base_height_shaped = RewTerm(
+        func=zoe_mdp.base_height_shaped,
+        weight=1.0,
+        params={
+            "target_height": 0.155,
+            "min_height": 0.148,
+            "std": 0.015,
+            "barrier_quad_weight": 150.0,
+            "barrier_lin_weight": 10.0,
+        },
     )
     lin_vel_z_l2 = RewTerm(
         func=mdp.lin_vel_z_l2,
@@ -343,6 +349,26 @@ class RewardsCfg:
         func=zoe_mdp.undesired_contacts,
         weight=ZOE_PARAMS.rewards.undesired_contacts,
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NTHIGH.*")},
+    )
+    # Unweighted TensorBoard Metrics (weight=0.0)
+    tb_mean_base_height = RewTerm(
+        func=zoe_mdp.metric_base_height,
+        weight=0.0,
+    )
+    tb_non_foot_contact = RewTerm(
+        func=zoe_mdp.metric_non_foot_contact,
+        weight=0.0,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*base_link.*|.*NCCUP.*|.*NTHIGH.*")},
+    )
+    tb_torque_saturation = RewTerm(
+        func=zoe_mdp.metric_torque_saturation,
+        weight=0.0,
+        params={"threshold": 2.45},
+    )
+    tb_mean_feet_down = RewTerm(
+        func=zoe_mdp.metric_feet_down,
+        weight=0.0,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NFOOT.*")},
     )
 
 

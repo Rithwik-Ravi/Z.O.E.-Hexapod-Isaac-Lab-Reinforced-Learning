@@ -70,3 +70,62 @@ def base_height_l2(env: ManagerBasedRLEnv, target_height: float, asset_cfg: Scen
     robot = env.scene[name]
     root_z = robot.data.root_pos_w[:, 2]
     return torch.square(root_z - target_height)
+
+
+def base_height_shaped(
+    env: ManagerBasedRLEnv,
+    target_height: float = 0.155,
+    min_height: float = 0.148,
+    std: float = 0.015,
+    barrier_quad_weight: float = 150.0,
+    barrier_lin_weight: float = 10.0,
+    asset_cfg: SceneEntityCfg = None,
+) -> torch.Tensor:
+    """Base height shaping: positive exponential attractor near target height plus steep barrier below min_height."""
+    if asset_cfg is None and hasattr(SceneEntityCfg, "__call__"):
+        asset_cfg = SceneEntityCfg("robot")
+    name = getattr(asset_cfg, "name", "robot")
+    robot = env.scene[name]
+    root_z = robot.data.root_pos_w[:, 2]
+
+    # Positive attractor (1.0 when at target_height)
+    attractor = torch.exp(-torch.square((root_z - target_height) / std))
+
+    # One-sided barrier below min_height
+    deficit = torch.clamp(min_height - root_z, min=0.0)
+    barrier = barrier_lin_weight * deficit + barrier_quad_weight * torch.square(deficit)
+
+    return attractor - barrier
+
+
+def metric_base_height(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = None) -> torch.Tensor:
+    """Metric monitor: Mean base height [m]."""
+    if asset_cfg is None and hasattr(SceneEntityCfg, "__call__"):
+        asset_cfg = SceneEntityCfg("robot")
+    name = getattr(asset_cfg, "name", "robot")
+    robot = env.scene[name]
+    return robot.data.root_pos_w[:, 2]
+
+
+def metric_non_foot_contact(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Metric monitor: Non-foot contact fraction [0 or 1 per env]."""
+    contact_sensor = env.scene[sensor_cfg.name]
+    net_forces_z = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]
+    return (net_forces_z > 1.0).any(dim=1).float()
+
+
+def metric_torque_saturation(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = None, threshold: float = 2.45) -> torch.Tensor:
+    """Metric monitor: Joint torque saturation fraction [0 to 1]."""
+    if asset_cfg is None and hasattr(SceneEntityCfg, "__call__"):
+        asset_cfg = SceneEntityCfg("robot")
+    name = getattr(asset_cfg, "name", "robot")
+    robot = env.scene[name]
+    torques = torch.abs(robot.data.applied_torque)
+    return (torques >= threshold).float().mean(dim=-1)
+
+
+def metric_feet_down(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Metric monitor: Mean feet in contact [0 to 6]."""
+    contact_sensor = env.scene[sensor_cfg.name]
+    net_forces_z = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]
+    return (net_forces_z > 1.0).sum(dim=1).float()

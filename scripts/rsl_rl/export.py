@@ -182,6 +182,46 @@ def run_export(args_cli):
     actor_mlp = actor_critic.actor
     normalizer = getattr(actor_critic, "actor_obs_normalizer", None)
 
+    # 2b. Stance Gate Check: verify policy before exporting
+    unwrapped_env = env.unwrapped
+    robot = unwrapped_env.scene["robot"]
+    contact_sensor = unwrapped_env.scene["contact_forces"]
+    body_names = contact_sensor.body_names
+    non_foot_ids = [i for i, name in enumerate(body_names) if not ("NFOOT" in name or "foot" in name)]
+
+    gate_heights = []
+    gate_non_foot = []
+    inference_pol = runner.get_inference_policy(device=args_cli.device)
+    obs_test = env.get_observations()
+    obs_t = obs_test[0] if isinstance(obs_test, tuple) else obs_test
+
+    with torch.no_grad():
+        for _ in range(200):
+            pol_t = obs_t["policy"] if isinstance(obs_t, dict) else obs_t
+            act_t = inference_pol(pol_t)
+            res_t = env.step(act_t)
+            obs_t = res_t[0]
+            gate_heights.append(robot.data.root_pos_w[:, 2].item())
+            forces_z = contact_sensor.data.net_forces_w[:, :, 2]
+            gate_non_foot.append((forces_z[:, non_foot_ids] > 1.0).any().item())
+
+    mean_gate_h = float(np.mean(gate_heights))
+    non_foot_rate = float(np.mean(gate_non_foot)) * 100.0
+    gate_passed = (mean_gate_h >= 0.1425) and (non_foot_rate < 1.0)
+
+    print(f"\n[EXPORT] Stance Gate Check: Mean Height={mean_gate_h:.4f}m (Threshold: >=0.1425m), Non-Foot Contacts={non_foot_rate:.2f}% (Threshold: <1.0%)")
+    if not gate_passed:
+        if getattr(args_cli, "force", False):
+            print(f"[EXPORT WARNING] Policy FAILED stance gate, but --force flag is present. Proceeding with export...")
+        else:
+            print(f"[EXPORT ERROR] Policy FAILED stance gate! Export refused to prevent deploying belly-dragging policies. Use --force to override.")
+            env.close()
+            simulation_app.close()
+            import sys
+            sys.exit(1)
+    else:
+        print("[EXPORT] Stance gate PASSED ✅")
+
     # 3. Export ONNX Policy with robust opset_version=14
     onnx_exporter = PolicyOnnxExporter(actor_mlp, normalizer)
     onnx_path = onnx_exporter.export(out_dir, filename="policy.onnx")
@@ -306,6 +346,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export RSL-RL policy for deployment.")
     parser.add_argument("--task", type=str, required=True, help="Task name e.g. Zoe-Hexapod-Flat-Deploy-v0")
     parser.add_argument("--out", type=str, default=None, help="Output directory e.g. deploy/run_01")
+    parser.add_argument("--force", action="store_true", default=False, help="Force export even if stance gate fails.")
     cli_args.add_rsl_rl_args(parser)
     AppLauncher.add_app_launcher_args(parser)
     args_cli, _ = parser.parse_known_args()
