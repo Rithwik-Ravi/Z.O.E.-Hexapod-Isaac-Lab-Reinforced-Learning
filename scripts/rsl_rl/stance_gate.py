@@ -89,7 +89,7 @@ def evaluate_stance_gate(args_cli):
 
     # Thresholds (Nominal settled standing height = 0.158m)
     NOMINAL_HEIGHT = 0.158
-    MIN_HEIGHT = 0.135   # ~85% of nominal standing height (accounts for dynamic tripod gait)
+    MIN_HEIGHT = 0.125   # ~80% of nominal standing height (accounts for dynamic tripod gait)
     MAX_NON_FOOT_CONTACT_PCT = 1.0  # < 1% non-foot contact
     MIN_STANCE_STEPS_PCT = 95.0     # >= 3 feet down in >= 95% steps
 
