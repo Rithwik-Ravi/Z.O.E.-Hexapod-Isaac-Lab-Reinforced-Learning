@@ -1,0 +1,30 @@
+actuator_assumptions:
+  deadband_deg: 0.5
+  max_speed_rad_s: 6.0
+  stall_torque_nm: 2.5
+  tau_ms: 10.0
+coxa:
+  deadband_deg: 0.5
+  delay_ms: 20.0
+  kd: 1.5
+  kp: 15.0
+  max_speed_rad_s: 6.0
+  stall_torque_nm: 2.5
+  tau_ms: 10.0
+foot:
+  deadband_deg: 0.5
+  delay_ms: 20.0
+  kd: 1.5
+  kp: 15.0
+  max_speed_rad_s: 6.0
+  stall_torque_nm: 2.5
+  tau_ms: 10.0
+status: UNCALIBRATED
+thigh:
+  deadband_deg: 0.5
+  delay_ms: 20.0
+  kd: 1.5
+  kp: 15.0
+  max_speed_rad_s: 6.0
+  stall_torque_nm: 2.5
+  tau_ms: 10.0

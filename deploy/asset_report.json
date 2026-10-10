@@ -1,0 +1,351 @@
+{
+  "usd_path": "/home/rithwik/SpdrBot-main/hexapod/hexa/hexa.usd",
+  "total_mass_kg": 0.6304680705070496,
+  "base_mass_kg": 0.17792919278144836,
+  "body_masses": {
+    "base_link_v1": 0.17792919278144836,
+    "NCCUP1": 0.027798155322670937,
+    "NCCUP2": 0.027798155322670937,
+    "NCCUP3": 0.027798155322670937,
+    "NCCUP4": 0.027798155322670937,
+    "NCCUP5": 0.027798155322670937,
+    "NCCUP6": 0.027798155322670937,
+    "NTHIGH1": 0.020557094365358353,
+    "NTHIGH2": 0.020557094365358353,
+    "NTHIGH3": 0.020557094365358353,
+    "NTHIGH4": 0.020557094365358353,
+    "NTHIGH5": 0.020557094365358353,
+    "NTHIGH6": 0.020557094365358353,
+    "NFOOT1": 0.0270678848028183,
+    "NFOOT2": 0.0270678848028183,
+    "NFOOT3": 0.0270678848028183,
+    "NFOOT4": 0.0270678848028183,
+    "NFOOT5": 0.0270678848028183,
+    "NFOOT6": 0.0270678848028183
+  },
+  "bounding_box_dim_m": [
+    0.4817978101043303,
+    0.4567983790505149,
+    0.2657504887352281
+  ],
+  "sim_joint_names": [
+    "base_link_v1_Revolute_39",
+    "base_link_v1_Revolute_42",
+    "base_link_v1_Revolute_45",
+    "base_link_v1_Revolute_48",
+    "base_link_v1_Revolute_51",
+    "base_link_v1_Revolute_54",
+    "NCCUP1_Revolute_38",
+    "NCCUP2_Revolute_41",
+    "NCCUP3_Revolute_44",
+    "NCCUP4_Revolute_47",
+    "NCCUP5_Revolute_50",
+    "NCCUP6_Revolute_53",
+    "NTHIGH1_Revolute_37",
+    "NTHIGH2_Revolute_40",
+    "NTHIGH3_Revolute_43",
+    "NTHIGH4_Revolute_46",
+    "NTHIGH5_Revolute_49",
+    "NTHIGH6_Revolute_52"
+  ],
+  "sim_body_names": [
+    "base_link_v1",
+    "NCCUP1",
+    "NCCUP2",
+    "NCCUP3",
+    "NCCUP4",
+    "NCCUP5",
+    "NCCUP6",
+    "NTHIGH1",
+    "NTHIGH2",
+    "NTHIGH3",
+    "NTHIGH4",
+    "NTHIGH5",
+    "NTHIGH6",
+    "NFOOT1",
+    "NFOOT2",
+    "NFOOT3",
+    "NFOOT4",
+    "NFOOT5",
+    "NFOOT6"
+  ],
+  "joint_info": [
+    {
+      "sim_index": 0,
+      "sim_name": "base_link_v1_Revolute_39",
+      "ros_name": "NCCUP1_joint",
+      "parent_body": "base_link_v1",
+      "child_body": "NCCUP1",
+      "axis": "Z",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 1,
+      "type": "coxa"
+    },
+    {
+      "sim_index": 1,
+      "sim_name": "base_link_v1_Revolute_42",
+      "ros_name": "NCCUP2_joint",
+      "parent_body": "base_link_v1",
+      "child_body": "NCCUP2",
+      "axis": "Z",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 2,
+      "type": "coxa"
+    },
+    {
+      "sim_index": 2,
+      "sim_name": "base_link_v1_Revolute_45",
+      "ros_name": "NCCUP3_joint",
+      "parent_body": "base_link_v1",
+      "child_body": "NCCUP3",
+      "axis": "Z",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 3,
+      "type": "coxa"
+    },
+    {
+      "sim_index": 3,
+      "sim_name": "base_link_v1_Revolute_48",
+      "ros_name": "NCCUP4_joint",
+      "parent_body": "base_link_v1",
+      "child_body": "NCCUP4",
+      "axis": "Z",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 4,
+      "type": "coxa"
+    },
+    {
+      "sim_index": 4,
+      "sim_name": "base_link_v1_Revolute_51",
+      "ros_name": "NCCUP5_joint",
+      "parent_body": "base_link_v1",
+      "child_body": "NCCUP5",
+      "axis": "Z",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 5,
+      "type": "coxa"
+    },
+    {
+      "sim_index": 5,
+      "sim_name": "base_link_v1_Revolute_54",
+      "ros_name": "NCCUP6_joint",
+      "parent_body": "base_link_v1",
+      "child_body": "NCCUP6",
+      "axis": "Z",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 6,
+      "type": "coxa"
+    },
+    {
+      "sim_index": 6,
+      "sim_name": "NCCUP1_Revolute_38",
+      "ros_name": "NTHIGH1_joint",
+      "parent_body": "NCCUP1",
+      "child_body": "NTHIGH1",
+      "axis": "",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 1,
+      "type": "thigh"
+    },
+    {
+      "sim_index": 7,
+      "sim_name": "NCCUP2_Revolute_41",
+      "ros_name": "NTHIGH2_joint",
+      "parent_body": "NCCUP2",
+      "child_body": "NTHIGH2",
+      "axis": "X",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 2,
+      "type": "thigh"
+    },
+    {
+      "sim_index": 8,
+      "sim_name": "NCCUP3_Revolute_44",
+      "ros_name": "NTHIGH3_joint",
+      "parent_body": "NCCUP3",
+      "child_body": "NTHIGH3",
+      "axis": "Z",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 3,
+      "type": "thigh"
+    },
+    {
+      "sim_index": 9,
+      "sim_name": "NCCUP4_Revolute_47",
+      "ros_name": "NTHIGH4_joint",
+      "parent_body": "NCCUP4",
+      "child_body": "NTHIGH4",
+      "axis": "",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 4,
+      "type": "thigh"
+    },
+    {
+      "sim_index": 10,
+      "sim_name": "NCCUP5_Revolute_50",
+      "ros_name": "NTHIGH5_joint",
+      "parent_body": "NCCUP5",
+      "child_body": "NTHIGH5",
+      "axis": "X",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 5,
+      "type": "thigh"
+    },
+    {
+      "sim_index": 11,
+      "sim_name": "NCCUP6_Revolute_53",
+      "ros_name": "NTHIGH6_joint",
+      "parent_body": "NCCUP6",
+      "child_body": "NTHIGH6",
+      "axis": "Z",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 6,
+      "type": "thigh"
+    },
+    {
+      "sim_index": 12,
+      "sim_name": "NTHIGH1_Revolute_37",
+      "ros_name": "NFOOT1_joint",
+      "parent_body": "NTHIGH1",
+      "child_body": "NFOOT1",
+      "axis": "",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 1,
+      "type": "foot"
+    },
+    {
+      "sim_index": 13,
+      "sim_name": "NTHIGH2_Revolute_40",
+      "ros_name": "NFOOT2_joint",
+      "parent_body": "NTHIGH2",
+      "child_body": "NFOOT2",
+      "axis": "X",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 2,
+      "type": "foot"
+    },
+    {
+      "sim_index": 14,
+      "sim_name": "NTHIGH3_Revolute_43",
+      "ros_name": "NFOOT3_joint",
+      "parent_body": "NTHIGH3",
+      "child_body": "NFOOT3",
+      "axis": "Y",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 3,
+      "type": "foot"
+    },
+    {
+      "sim_index": 15,
+      "sim_name": "NTHIGH4_Revolute_46",
+      "ros_name": "NFOOT4_joint",
+      "parent_body": "NTHIGH4",
+      "child_body": "NFOOT4",
+      "axis": "",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 4,
+      "type": "foot"
+    },
+    {
+      "sim_index": 16,
+      "sim_name": "NTHIGH5_Revolute_49",
+      "ros_name": "NFOOT5_joint",
+      "parent_body": "NTHIGH5",
+      "child_body": "NFOOT5",
+      "axis": "X",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 5,
+      "type": "foot"
+    },
+    {
+      "sim_index": 17,
+      "sim_name": "NTHIGH6_Revolute_52",
+      "ros_name": "NFOOT6_joint",
+      "parent_body": "NTHIGH6",
+      "child_body": "NFOOT6",
+      "axis": "Y",
+      "limits_rad": [
+        -Infinity,
+        Infinity
+      ],
+      "default_pos_rad": 0.0,
+      "leg": 6,
+      "type": "foot"
+    }
+  ],
+  "is_leg_grouped": false,
+  "tip_body_situation": "NFOOT1..6 bodies exist (tibia links). No dedicated zero-radius tip prims found in USD.",
+  "warnings": [
+    "WARNING: Total USD mass (0.630 kg) differs from expected real mass (2.000 kg) by 68.5% (>20% threshold).",
+    "WARNING: USD joints have unconstrained/infinite limits (-inf, inf). Hardware clamps (coxa -45..+135 deg, thigh/foot -90..+90 deg) must be enforced in ArticulationCfg.",
+    "WARNING: Simulator joint order is NOT leg-grouped! Actual order: ['base_link_v1_Revolute_39', 'base_link_v1_Revolute_42', 'base_link_v1_Revolute_45', 'base_link_v1_Revolute_48', 'base_link_v1_Revolute_51', 'base_link_v1_Revolute_54', 'NCCUP1_Revolute_38', 'NCCUP2_Revolute_41', 'NCCUP3_Revolute_44', 'NCCUP4_Revolute_47', 'NCCUP5_Revolute_50', 'NCCUP6_Revolute_53', 'NTHIGH1_Revolute_37', 'NTHIGH2_Revolute_40', 'NTHIGH3_Revolute_43', 'NTHIGH4_Revolute_46', 'NTHIGH5_Revolute_49', 'NTHIGH6_Revolute_52']"
+  ]
+}
