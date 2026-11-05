@@ -1,0 +1,774 @@
+<?xml version='1.0' encoding='utf-8'?>
+<sdf version="1.7">
+    <model name="hexa">
+        <link name="base_link">
+            <pose>-0.000916235440310818 0.005901570404250604 -0.034383925822579334 3.1415926535897927 -5.774894451526468e-15 -3.141592653589787</pose>
+            <inertial>
+                <mass>2.502728704259523</mass>
+                <pose>1.7728580933999078e-12 -2.974923949070976e-12 -0.016506533029719207 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>0.010209323161935659</ixx>
+                    <iyy>0.009936168413282058</iyy>
+                    <izz>0.019355228545140914</izz>
+                    <ixy>-2.7795540266991648e-12</ixy>
+                    <iyz>7.976531684940807e-14</iyz>
+                    <ixz>-1.0281441658134396e-13</ixz>
+                </inertia>
+            </inertial>
+            <visual name="base_link_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/base_link.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="base_link_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/base_link.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NTHIGH1">
+            <pose>-0.03579598142614417 -0.12494172870158395 -0.05043120699179705 3.1415926535889414 1.3267101152396152e-14 -2.0943950995945264</pose>
+            <inertial>
+                <mass>0.21554371614573412</mass>
+                <pose>0.04727891731914124 0.03544805916972651 -0.03362227790755968 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>3.597995343552387e-05</ixx>
+                    <iyy>0.00017409481543919974</iyy>
+                    <izz>0.00018013974928612436</izz>
+                    <ixy>4.904578001312905e-08</ixy>
+                    <iyz>9.404614918223722e-12</iyz>
+                    <ixz>1.0302904257627235e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NTHIGH1_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH1.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NTHIGH1_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH1.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NTHIGH2">
+            <pose>-0.22618804705657292 -0.029313333135566715 0.01651335534666612 -8.330611157235499e-13 1.690961015937971e-16 -9.328777195172189e-10</pose>
+            <inertial>
+                <mass>0.2155437161457342</mass>
+                <pose>0.047278917319139024 0.03544805916972734 -0.03362227790755927 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>3.5979953435486366e-05</ixx>
+                    <iyy>0.00017409481543922907</iyy>
+                    <izz>0.00018013974928613363</izz>
+                    <ixy>4.904578002590991e-08</ixy>
+                    <iyz>9.404615853340884e-12</iyz>
+                    <ixz>1.0302904261104464e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NTHIGH2_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH2.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NTHIGH2_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH2.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NFOOT2">
+            <pose>-0.21664154109428765 0.026526570333885512 -0.017108925822550823 -3.141592651724015 -1.5707963267948752 0</pose>
+            <inertial>
+                <mass>0.04666946483479382</mass>
+                <pose>0.004997216396038662 0.019004031278000905 -0.061285197955304044 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>0.00015381323100335434</ixx>
+                    <iyy>0.00014641067375385975</iyy>
+                    <izz>1.582168573391752e-05</izz>
+                    <ixy>1.8724911556413427e-08</ixy>
+                    <iyz>1.1686489159707412e-07</iyz>
+                    <ixz>-9.251228311468066e-06</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NFOOT2_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT2.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NFOOT2_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT2.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NTHIGH3">
+            <pose>-0.09678998338801822 0.1015299660584429 -0.05043120699179765 3.1415926535889582 1.620856256706502e-14 2.0943951051918615</pose>
+            <inertial>
+                <mass>0.2155267515452591</mass>
+                <pose>0.04728119000718022 0.035449370371017794 -0.03362147110650447 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>3.597345310678608e-05</ixx>
+                    <iyy>0.00017407888046184382</iyy>
+                    <izz>0.00018012088743181096</izz>
+                    <ixy>5.7206004523519034e-08</ixy>
+                    <iyz>2.906272828872401e-09</iyz>
+                    <ixz>1.5324008034878952e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NTHIGH3_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH3.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NTHIGH3_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH3.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NTHIGH4">
+            <pose>0.08122266931052405 0.218600133790383 0.016813355346663294 -8.33839660402946e-13 -1.611644820833791e-14 -2.094395103326105</pose>
+            <inertial>
+                <mass>0.21550978694517636</mass>
+                <pose>0.04727429028823815 0.03545068177868792 -0.03362227790703039 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>3.596695232024036e-05</ixx>
+                    <iyy>0.0001740619225928768</iyy>
+                    <izz>0.00018010100166215777</izz>
+                    <ixy>3.243214431626634e-08</ixy>
+                    <iyz>9.40657641892678e-12</iyz>
+                    <ixz>1.0302901165118268e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NTHIGH4_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH4.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NTHIGH4_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH4.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NTHIGH6">
+            <pose>0.09495751250739501 -0.08972682524994126 -0.050431206991797616 3.141592653588941 2.1832187334668352e-14 -1.0471975483979308</pose>
+            <inertial>
+                <mass>0.21554371614573414</mass>
+                <pose>0.047278917319137914 0.03544805916972929 -0.03362227790755958 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>3.597995343545843e-05</ixx>
+                    <iyy>0.0001740948154393099</iyy>
+                    <izz>0.00018013974928613016</izz>
+                    <ixy>4.904578001738792e-08</ixy>
+                    <iyz>9.404613632006405e-12</iyz>
+                    <ixz>1.0302904256462403e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NTHIGH6_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH6.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NTHIGH6_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH6.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NTHIGH5">
+            <pose>0.2243555761759518 0.04111647394406814 0.016813355346663603 -8.365992625341721e-13 -1.6594424899180225e-14 3.141592652656915</pose>
+            <inertial>
+                <mass>0.21554371614573384</mass>
+                <pose>0.04727891731913925 0.03544805916972748 -0.03362227790755954 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>3.597995343548356e-05</ixx>
+                    <iyy>0.00017409481543922555</iyy>
+                    <izz>0.00018013974928612745</izz>
+                    <ixy>4.9045780026486056e-08</ixy>
+                    <iyz>9.40461148255781e-12</iyz>
+                    <ixz>1.0302904257575991e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NTHIGH5_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH5.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NTHIGH5_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NTHIGH5.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NFOOT1">
+            <pose>-0.12664066215941955 -0.17060952456643738 -0.016808925822551883 -2.0943951005274144 -1.570796326794882 0</pose>
+            <inertial>
+                <mass>0.04666946483479382</mass>
+                <pose>0.004997216396038382 0.019004031278000405 -0.06128519795530102 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>0.00015381323100338579</ixx>
+                    <iyy>0.00014641067375386013</iyy>
+                    <izz>1.5821685733916034e-05</izz>
+                    <ixy>1.872491154280039e-08</ixy>
+                    <iyz>1.1686489159791267e-07</iyz>
+                    <ixz>-9.251228311468149e-06</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NFOOT1_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT1.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NFOOT1_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT1.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NFOOT6">
+            <pose>0.08908464349455901 -0.19123452449607004 -0.016808925822553018 -1.0471975493307704 -1.5707963267948748 0</pose>
+            <inertial>
+                <mass>0.04666946483479382</mass>
+                <pose>0.004997216396037972 0.01900403127800199 -0.061285197955302365 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>0.00015381323100335033</ixx>
+                    <iyy>0.0001464106737538882</iyy>
+                    <izz>1.582168573391526e-05</izz>
+                    <ixy>1.872491154195632e-08</ixy>
+                    <iyz>1.1686489159613744e-07</iyz>
+                    <ixz>-9.251228311467308e-06</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NFOOT6_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT6.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NFOOT6_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT6.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NFOOT3">
+            <pose>-0.0909171143751817 0.20303766530457168 -0.016808925822553812 2.094395104259016 -1.5707963267948744 0</pose>
+            <inertial>
+                <mass>0.04666946483479382</mass>
+                <pose>0.004997216396037944 0.019004031278001928 -0.06128519795530424 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>0.00015381323100334215</ixx>
+                    <iyy>0.0001464106737538869</iyy>
+                    <izz>1.5821685733916854e-05</izz>
+                    <ixy>1.8724911544457143e-08</ixy>
+                    <iyz>1.1686489159772298e-07</iyz>
+                    <ixz>-9.251228311467005e-06</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NFOOT3_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT3.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NFOOT3_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT3.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NFOOT5">
+            <pose>0.214809070213666 -0.014723429525384005 -0.01680892582255335 1.8657764222496065e-09 -1.570796326794872 0</pose>
+            <inertial>
+                <mass>0.04666946483479382</mass>
+                <pose>0.004997216396038656 0.019004031278000783 -0.06128519795530393 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>0.00015381323100335564</ixx>
+                    <iyy>0.0001464106737538572</iyy>
+                    <izz>1.5821685733917576e-05</izz>
+                    <ixy>1.8724911556932923e-08</ixy>
+                    <iyz>1.1686489159750445e-07</iyz>
+                    <ixz>-9.251228311467881e-06</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NFOOT5_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT5.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NFOOT5_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT5.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NFOOT4">
+            <pose>0.12480819127879722 0.18241266537493872 -0.01680892582255355 1.0471975530623907 -1.5707963267948775 0</pose>
+            <inertial>
+                <mass>0.04666946483479382</mass>
+                <pose>0.00499721639603834 0.01900403127800034 -0.061285197955303856 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>0.00015381323100338579</ixx>
+                    <iyy>0.00014641067375384859</iyy>
+                    <izz>1.582168573391818e-05</izz>
+                    <ixy>1.8724911540852304e-08</ixy>
+                    <iyz>1.1686489159731641e-07</iyz>
+                    <ixz>-9.251228311468465e-06</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NFOOT4_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT4.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NFOOT4_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NFOOT4.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NCCUP1">
+            <pose>-0.009703297649475681 -0.08659802177149951 -0.03866643541311664 -1.6244264724754627e-14 1.3877723814817505e-14 -2.0943951023932206</pose>
+            <inertial>
+                <mass>0.015043184987872802</mass>
+                <pose>0.039193896467854095 -0.03848323201424205 0.02201232940281317 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>4.828149968070626e-06</ixx>
+                    <iyy>4.226785854066249e-06</iyy>
+                    <izz>4.0781352927354724e-06</izz>
+                    <ixy>-3.901449060098982e-08</ixy>
+                    <iyz>4.096658831301095e-10</iyz>
+                    <ixz>4.086883309960086e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NCCUP1_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP1.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NCCUP1_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP1.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NCCUP5">
+            <pose>0.08358429232817587 0.04454154739435667 -0.03866643541311718 -1.8932073637045e-15 1.6885858434876988e-14 6.661338147751061e-15</pose>
+            <inertial>
+                <mass>0.015043184987872802</mass>
+                <pose>0.03919389646784974 -0.03848323201424061 0.02201232940281304 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>4.8281499680703965e-06</ixx>
+                    <iyy>4.226785854070733e-06</iyy>
+                    <izz>4.0781352927388e-06</izz>
+                    <ixy>-3.9014490597763544e-08</ixy>
+                    <iyz>4.096658832400656e-10</iyz>
+                    <ixz>4.086883309955572e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NCCUP5_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP5.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NCCUP5_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP5.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NCCUP4">
+            <pose>0.007870826768852661 0.09840116258000076 -0.03866643541311757 -4.441173236680184e-15 1.658829298305841e-14 1.0471975511965743</pose>
+            <inertial>
+                <mass>0.015043184987872802</mass>
+                <pose>0.03919389646785407 -0.038483232014241975 0.022012329402813148 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>4.82814996807077e-06</ixx>
+                    <iyy>4.226785854066346e-06</iyy>
+                    <izz>4.078135292735671e-06</izz>
+                    <ixy>-3.901449060086101e-08</ixy>
+                    <iyz>4.096658832652747e-10</iyz>
+                    <ixz>4.0868833099612534e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NCCUP4_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP4.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NCCUP4_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP4.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NCCUP6">
+            <pose>0.07479723011901203 -0.047958044781392886 -0.03866643541311693 -1.6519986817531826e-14 2.2165254255751092e-14 -1.0471975511966274</pose>
+            <inertial>
+                <mass>0.015043184987872802</mass>
+                <pose>0.039193896467851465 -0.03848323201424552 0.02201232940281308 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>4.8281499680657285e-06</ixx>
+                    <iyy>4.226785854071029e-06</iyy>
+                    <izz>4.078135292734951e-06</izz>
+                    <ixy>-3.901449060133627e-08</ixy>
+                    <iyz>4.0966588318664056e-10</iyz>
+                    <ixz>4.086883309954593e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NCCUP6_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP6.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NCCUP6_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP6.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NCCUP3">
+            <pose>-0.07662970099963486 0.059761185589894184 -0.03866643541311707 7.073579312794103e-16 1.64427502520703e-14 2.094395102393166</pose>
+            <inertial>
+                <mass>0.015043184987872802</mass>
+                <pose>0.03919389646785123 -0.038483232014245326 0.022012329402813106 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>4.828149968065531e-06</ixx>
+                    <iyy>4.226785854070948e-06</iyy>
+                    <izz>4.078135292735164e-06</izz>
+                    <ixy>-3.901449060132879e-08</ixy>
+                    <iyz>4.09665883190483e-10</iyz>
+                    <ixz>4.086883309963432e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NCCUP3_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP3.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NCCUP3_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP3.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="NCCUP2">
+            <pose>-0.08541676320879864 -0.03273840658585567 -0.03896643541311694 -5.441762525922755e-15 -1.448099655004494e-16 -3.141592653589787</pose>
+            <inertial>
+                <mass>0.015043184987872802</mass>
+                <pose>0.03919389646784994 -0.0384832320142409 0.022012329402813197 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>4.828149968070148e-06</ixx>
+                    <iyy>4.226785854070643e-06</iyy>
+                    <izz>4.0781352927385285e-06</izz>
+                    <ixy>-3.901449059790733e-08</ixy>
+                    <iyz>4.0966588317307573e-10</iyz>
+                    <ixz>4.086883309971137e-08</ixz>
+                </inertia>
+            </inertial>
+            <visual name="NCCUP2_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP2.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="NCCUP2_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/NCCUP2.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <link name="DCAM">
+            <pose>-0.0009162353452646642 -0.11638557965508564 0.09569883364772797 1.570796326794897 -2.1423834928312613e-15 6.289073287295373e-15</pose>
+            <inertial>
+                <mass>0.3592826634307687</mass>
+                <pose>0.0011117159690603121 -2.7969991271521812e-05 -0.01259986740144404 0.0 0.0 0.0</pose>
+                <inertia>
+                    <ixx>3.257749895460674e-05</ixx>
+                    <iyy>0.00021891428266341818</iyy>
+                    <izz>0.00021658534979581426</izz>
+                    <ixy>-1.0999852139997592e-08</ixy>
+                    <iyz>5.779765666698399e-08</iyz>
+                    <ixz>3.2233663880791505e-06</ixz>
+                </inertia>
+            </inertial>
+            <visual name="DCAM_visual">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/DCAM.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </visual>
+            <collision name="DCAM_collision">
+                <geometry>
+                    <mesh>
+                        <uri>model://hexa/meshes/DCAM.stl</uri>
+                        <scale>0.001 0.001 0.001</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+        </link>
+        <joint name="base_link_Revolute-31" type="revolute">
+            <pose>0.021799650557833297 -0.03863980808380421 0.0032324354131167653 0.0 0.0 0.0</pose>
+            <parent>base_link</parent>
+            <child>NCCUP6</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.0 0.0 -1.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NCCUP6_Revolute-32" type="revolute">
+            <pose>0.009546230816575478 0.053839792470791674 -0.03362220699175193 0.0 0.0 0.0</pose>
+            <parent>NCCUP6</parent>
+            <child>NTHIGH6</child>
+            <axis>
+                <xyz expressed_in="__model__">0.866025 0.5 -0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="base_link_Revolute-34" type="revolute">
+            <pose>0.021799415117523608 -0.03863973810183184 0.0032324354131163554 0.0 0.0 0.0</pose>
+            <parent>base_link</parent>
+            <child>NCCUP1</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.0 0.0 -1.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NCCUP1_Revolute-35" type="revolute">
+            <pose>0.009546272230776554 0.05384008621748974 -0.03362220699175139 0.0 0.0 0.0</pose>
+            <parent>NCCUP1</parent>
+            <child>NTHIGH1</child>
+            <axis>
+                <xyz expressed_in="__model__">0.866025 -0.5 -0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="base_link_Revolute-39" type="revolute">
+            <pose>0.021799707671824303 -0.0386395473943569 0.003232435413117432 0.0 0.0 0.0</pose>
+            <parent>base_link</parent>
+            <child>NCCUP5</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.0 0.0 -1.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NCCUP5_Revolute-40" type="revolute">
+            <pose>0.08497157612572785 0.05383947402336835 -0.03362235534662001 0.0 0.0 0.0</pose>
+            <parent>NCCUP5</parent>
+            <child>NTHIGH5</child>
+            <axis>
+                <xyz expressed_in="__model__">0.0 1.0 -0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="base_link_Revolute-42" type="revolute">
+            <pose>0.021799528614095925 -0.03864021630066412 0.0032324354131177254 0.0 0.0 0.0</pose>
+            <parent>base_link</parent>
+            <child>NCCUP4</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.0 -0.0 -1.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NCCUP4_Revolute-43" type="revolute">
+            <pose>0.08497243175447507 0.05383969853164478 -0.033622355346619844 0.0 0.0 0.0</pose>
+            <parent>NCCUP4</parent>
+            <child>NTHIGH4</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.866025 0.5 -0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="base_link_Revolute-45" type="revolute">
+            <pose>0.021799293173782642 -0.038640145474134927 0.003232435413117468 0.0 0.0 0.0</pose>
+            <parent>base_link</parent>
+            <child>NCCUP3</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.0 -0.0 -1.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NCCUP3_Revolute-46" type="revolute">
+            <pose>0.009546373432526081 0.0538392638357186 -0.033622206991752855 0.0 0.0 0.0</pose>
+            <parent>NCCUP3</parent>
+            <child>NTHIGH3</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.866025 -0.5 0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="base_link_Revolute-48" type="revolute">
+            <pose>0.021799236791201607 -0.03864040658585603 0.003232435413116779 0.0 0.0 0.0</pose>
+            <parent>base_link</parent>
+            <child>NCCUP2</child>
+            <axis>
+                <xyz expressed_in="__model__">0.0 0.0 1.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NCCUP2_Revolute-49" type="revolute">
+            <pose>0.08497204700634868 0.05384033321486719 -0.03362235534662092 0.0 0.0 0.0</pose>
+            <parent>NCCUP2</parent>
+            <child>NTHIGH2</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.0 -1.0 -0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NTHIGH6_Revolute-51" type="revolute">
+            <pose>-7.417744698558298e-08 0.0020000269901571995 -5.646511506482578e-07 0.0 0.0 0.0</pose>
+            <parent>NTHIGH6</parent>
+            <child>NFOOT6</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.866025 -0.5 0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NTHIGH1_Revolute-52" type="revolute">
+            <pose>-7.417744812187335e-08 0.001999901137609758 -6.060653491271529e-07 0.0 0.0 0.0</pose>
+            <parent>NTHIGH1</parent>
+            <child>NFOOT1</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.866025 0.5 0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NTHIGH2_Revolute-53" type="revolute">
+            <pose>-7.417744913356068e-08 0.0019995703338847033 -4.5890944310226034e-07 0.0 0.0 0.0</pose>
+            <parent>NTHIGH2</parent>
+            <child>NFOOT2</child>
+            <axis>
+                <xyz expressed_in="__model__">-0.0 1.0 0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NTHIGH3_Revolute-54" type="revolute">
+            <pose>-7.417744622232217e-08 0.001999689599827294 -2.0726709918067153e-07 0.0 0.0 0.0</pose>
+            <parent>NTHIGH3</parent>
+            <child>NFOOT3</child>
+            <axis>
+                <xyz expressed_in="__model__">0.866025 0.5 -0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NTHIGH4_Revolute-55" type="revolute">
+            <pose>-7.417744647193047e-08 0.002000288964182492 -2.195619217711381e-07 0.0 0.0 0.0</pose>
+            <parent>NTHIGH4</parent>
+            <child>NFOOT4</child>
+            <axis>
+                <xyz expressed_in="__model__">0.866025 -0.5 0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="NTHIGH5_Revolute-56" type="revolute">
+            <pose>-7.417744661412544e-08 0.0020004295253841804 7.020993363822506e-08 0.0 0.0 0.0</pose>
+            <parent>NTHIGH5</parent>
+            <child>NFOOT5</child>
+            <axis>
+                <xyz expressed_in="__model__">0.0 -1.0 0.0</xyz>
+            </axis>
+        </joint>
+        <joint name="base_link_Rigid-57" type="fixed">
+            <pose>2.3534526455421419e-07 -0.09508283364772807 -0.014899579655085796 0.0 0.0 0.0</pose>
+            <parent>base_link</parent>
+            <child>DCAM</child>
+        </joint>
+    </model>
+</sdf>
