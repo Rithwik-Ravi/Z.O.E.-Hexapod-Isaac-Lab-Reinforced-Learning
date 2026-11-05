@@ -26,6 +26,7 @@ def generate_gait_report(args_cli):
     from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, RslRlOnPolicyRunnerCfg
     from isaaclab.utils.assets import retrieve_file_path
     import spdrbot3.tasks
+    from spdrbot3.tasks.manager_based.zoe_deploy.params import get_foot_tip_offsets_tensor
 
     ckpt_path = retrieve_file_path(args_cli.checkpoint)
     print(f"\n[GAIT REPORT] Loading checkpoint: {ckpt_path}")
@@ -46,7 +47,10 @@ def generate_gait_report(args_cli):
 
     body_names = contact_sensor.body_names
     # Order legs 1..6
-    foot_ids = [body_names.index(f"NFOOT{i}") for i in range(1, 7)]
+    foot_names = [f"NFOOT{i}" for i in range(1, 7)]
+    foot_ids = [body_names.index(name) for name in foot_names]
+    robot_foot_ids = [robot.body_names.index(name) for name in foot_names]
+    r_local = get_foot_tip_offsets_tensor(foot_names, robot.device, torch.float32)
 
     num_steps = 600  # 12.0 s at 50Hz
     dt = unwrapped.step_dt
@@ -95,10 +99,23 @@ def generate_gait_report(args_cli):
             is_contact = forces_z > 1.0
             contacts[step] = is_contact
 
-            foot_pos = robot.data.body_pos_w[0, foot_ids, :].cpu().numpy()
-            foot_heights[step] = foot_pos[:, 2]
+            # Foot tip kinematics using per-leg 3D local tip vectors from ZOE_PARAMS
+            body_pos = robot.data.body_pos_w[0, robot_foot_ids, :]
+            body_quat = robot.data.body_quat_w[0, robot_foot_ids, :]
+            body_lin_vel = robot.data.body_lin_vel_w[0, robot_foot_ids, :]
+            body_ang_vel = robot.data.body_ang_vel_w[0, robot_foot_ids, :]
 
-            foot_vel_xy = np.linalg.norm(robot.data.body_lin_vel_w[0, foot_ids, :2].cpu().numpy(), axis=-1)
+            q_w = body_quat[:, 0:1]
+            q_vec = body_quat[:, 1:4]
+            a = torch.cross(q_vec, r_local, dim=-1)
+            v_rot = r_local + 2.0 * q_w * a + 2.0 * torch.cross(q_vec, a, dim=-1)
+
+            tip_pos_w = (body_pos + v_rot).cpu().numpy()
+            tip_vel_w = (body_lin_vel + torch.cross(body_ang_vel, v_rot, dim=-1)).cpu().numpy()
+
+            foot_heights[step] = tip_pos_w[:, 2]
+
+            foot_vel_xy = np.linalg.norm(tip_vel_w[:, :2], axis=-1)
             for leg_i in range(6):
                 if is_contact[leg_i]:
                     foot_slips[leg_i].append(foot_vel_xy[leg_i])
@@ -175,9 +192,9 @@ def generate_gait_report(args_cli):
         print(f"Leg {leg_i+1} : {row_str}")
 
     print("=" * 80 + "\n")
-
-    env.close()
-    sim_app.close()
+    sys.stdout.flush()
+    import os
+    os._exit(0)
 
 
 if __name__ == "__main__":

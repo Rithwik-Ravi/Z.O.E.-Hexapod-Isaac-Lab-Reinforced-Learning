@@ -64,12 +64,15 @@ class ZoeSceneCfg(InteractiveSceneCfg):
 
 @configclass
 class ActionsCfg:
-    """Action configuration for 18 joint position targets."""
-    joint_pos = mdp.JointPositionActionCfg(
+    """Action configuration for 18 joint position targets with delay and rate limiting."""
+    joint_pos = zoe_mdp.DelayedRateLimitedJointPositionActionCfg(
         asset_name="robot",
         joint_names=[".*Revolute.*"],
-        scale=0.25,
+        scale=0.50,
+        max_delay_steps=ZOE_PARAMS.events.max_action_delay_steps,
+        rate_limit_rad_per_step=math.radians(6.0),
     )
+
 
 
 @configclass
@@ -101,7 +104,7 @@ class ObservationsCfg:
             params={"command_name": "base_velocity"},
         )
         joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
+            func=zoe_mdp.joint_pos_rel_calibrated,
             scale=ZOE_PARAMS.obs_scale.joint_pos_rel_scale,
             clip=ZOE_PARAMS.obs_scale.joint_pos_rel_clip,
             noise=UniformNoiseCfg(
@@ -144,7 +147,7 @@ class ObservationsCfg:
             params={"command_name": "base_velocity"},
         )
         joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
+            func=zoe_mdp.joint_pos_rel_calibrated,
             scale=ZOE_PARAMS.obs_scale.joint_pos_rel_scale,
             clip=ZOE_PARAMS.obs_scale.joint_pos_rel_clip,
         )
@@ -200,13 +203,13 @@ class EventCfg:
             "num_buckets": 64,
         },
     )
-    add_base_mass = EventTerm(
+    scale_base_mass = EventTerm(
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="base_link_v1"),
-            "mass_distribution_params": ZOE_PARAMS.events.base_payload_mass_range,
-            "operation": "add",
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*base_link.*"),
+            "mass_distribution_params": ZOE_PARAMS.events.base_mass_scale_range,
+            "operation": "scale",
         },
     )
     scale_body_mass = EventTerm(
@@ -222,7 +225,7 @@ class EventCfg:
         func=mdp.randomize_rigid_body_com,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="base_link_v1"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*base_link.*"),
             "com_range": {
                 "x": ZOE_PARAMS.events.base_com_offset_range,
                 "y": ZOE_PARAMS.events.base_com_offset_range,
@@ -253,7 +256,7 @@ class EventCfg:
         func=zoe_mdp.reset_root_near_ground,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.1, 0.1), "y": (-0.1, 0.1), "z": (0.17, 0.19), "yaw": (-math.pi, math.pi)},
+            "pose_range": {"x": (-0.1, 0.1), "y": (-0.1, 0.1), "z": ZOE_PARAMS.SPAWN_Z_RANGE, "yaw": (-math.pi, math.pi)},
             "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},
         },
     )
@@ -281,12 +284,12 @@ class RewardsCfg:
     track_lin_vel_xy_exp = RewTerm(
         func=mdp.track_lin_vel_xy_exp,
         weight=ZOE_PARAMS.rewards.track_lin_vel_xy_exp,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
+        params={"command_name": "base_velocity", "std": ZOE_PARAMS.rewards.track_lin_vel_std},
     )
     track_ang_vel_z_exp = RewTerm(
         func=mdp.track_ang_vel_z_exp,
         weight=ZOE_PARAMS.rewards.track_ang_vel_z_exp,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
+        params={"command_name": "base_velocity", "std": ZOE_PARAMS.rewards.track_ang_vel_std},
     )
     termination_penalty = RewTerm(
         func=mdp.is_terminated,
@@ -296,8 +299,8 @@ class RewardsCfg:
         func=zoe_mdp.base_height_shaped,
         weight=1.0,
         params={
-            "target_height": 0.155,
-            "min_height": 0.148,
+            "target_height": ZOE_PARAMS.TARGET_STANDING_HEIGHT,
+            "min_height": ZOE_PARAMS.GATE_MIN_HEIGHT,
             "std": 0.015,
             "barrier_quad_weight": 150.0,
             "barrier_lin_weight": 10.0,
@@ -345,10 +348,69 @@ class RewardsCfg:
         weight=ZOE_PARAMS.rewards.fewer_than_3_feet_contact,
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NFOOT.*")},
     )
+    fewer_than_4_feet_contact = RewTerm(
+        func=zoe_mdp.fewer_than_4_feet_contact,
+        weight=ZOE_PARAMS.rewards.fewer_than_4_feet_contact,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NFOOT.*")},
+    )
     undesired_contacts = RewTerm(
         func=zoe_mdp.undesired_contacts,
         weight=ZOE_PARAMS.rewards.undesired_contacts,
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NTHIGH.*")},
+    )
+    foot_tip_slip = RewTerm(
+        func=zoe_mdp.foot_tip_slip_penalty,
+        weight=ZOE_PARAMS.rewards.foot_tip_slip,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NFOOT.*"),
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    foot_tip_clearance = RewTerm(
+        func=zoe_mdp.foot_tip_clearance_reward,
+        weight=ZOE_PARAMS.rewards.foot_tip_clearance,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NFOOT.*"),
+            "command_name": "base_velocity",
+            "target_clearance": 0.05,
+            "std": 0.02,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    stand_still_posture = RewTerm(
+        func=zoe_mdp.stand_still_posture_penalty,
+        weight=ZOE_PARAMS.rewards.stand_still_posture,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NFOOT.*"),
+            "command_name": "base_velocity",
+            "cmd_threshold": 0.05,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    stand_still_feet_grounded = RewTerm(
+        func=zoe_mdp.stand_still_feet_grounded_reward,
+        weight=ZOE_PARAMS.rewards.stand_still_feet_grounded,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*NFOOT.*"),
+            "command_name": "base_velocity",
+            "cmd_threshold": 0.05,
+        },
+    )
+    joint_vel_limit = RewTerm(
+        func=zoe_mdp.joint_vel_limit_penalty,
+        weight=ZOE_PARAMS.rewards.joint_vel_limit,
+        params={
+            "limit": ZOE_PARAMS.NO_LOAD_SPEED_RAD_S,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    torque_limit = RewTerm(
+        func=zoe_mdp.torque_limit_penalty,
+        weight=ZOE_PARAMS.rewards.torque_limit,
+        params={
+            "threshold": ZOE_PARAMS.rewards.torque_soft_limit_nm,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
     )
     # Unweighted TensorBoard Metrics (weight=0.0)
     tb_mean_base_height = RewTerm(
@@ -363,7 +425,7 @@ class RewardsCfg:
     tb_torque_saturation = RewTerm(
         func=zoe_mdp.metric_torque_saturation,
         weight=0.0,
-        params={"threshold": 2.45},
+        params={"threshold": ZOE_PARAMS.TORQUE_SAT_THRESHOLD_NM},
     )
     tb_mean_feet_down = RewTerm(
         func=zoe_mdp.metric_feet_down,
@@ -399,7 +461,7 @@ class TerminationsCfg:
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*base_link.*|.*NCCUP.*"), "threshold": 1.0},
     )
     bad_orientation = DoneTerm(
-        func=mdp.bad_orientation,
+        func=zoe_mdp.bad_orientation,
         params={"limit_angle": 1.2},
     )
     invalid_state_nan = DoneTerm(
@@ -437,3 +499,5 @@ class ZoeHexapodFlatDeployPlayEnvCfg(ZoeHexapodFlatDeployEnvCfg):
         self.scene.num_envs = 16
         self.observations.policy.enable_corruption = False
         self.events = EventCfg()  # Clear randomization events
+        self.actions.joint_pos.fixed_delay_steps = 0  # Configurable default 0 in play mode
+

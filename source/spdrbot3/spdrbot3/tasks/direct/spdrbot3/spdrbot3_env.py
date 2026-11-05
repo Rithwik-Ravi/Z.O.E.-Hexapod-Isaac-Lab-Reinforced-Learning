@@ -32,8 +32,8 @@ class Spdrbot3Env(DirectRLEnv):
         # X/Y linear velocity and yaw angular velocity commands
         self._commands = torch.zeros(self.num_envs, 3, device=self.device)
 
-        self._base_id, _ = self._contact_sensor.find_bodies("base_link_v1")
-        self._die_body_ids, _ = self._contact_sensor.find_bodies(["base_link_v1"])
+        self._base_id, _ = self._contact_sensor.find_bodies(".*base_link.*")
+        self._die_body_ids, _ = self._contact_sensor.find_bodies([".*base_link.*"])
         self._foot_body_ids, _ = self._robot.find_bodies(".*FOOT.*")
 
         self._episode_sums = {

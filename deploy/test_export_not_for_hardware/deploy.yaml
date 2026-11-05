@@ -1,0 +1,249 @@
+schema_version: 1
+policy:
+  onnx: policy.onnx
+  numpy: policy_mlp.npz
+  control_hz: 50
+  action_scale: 0.5
+  action_clip: null
+joint_order:
+- sim: base_link_Revolute_31
+  ros: NCCUP6_joint
+  leg: 6
+  type: coxa
+  servo_id: 16
+  axis:
+  - Z
+- sim: base_link_Revolute_34
+  ros: NCCUP1_joint
+  leg: 1
+  type: coxa
+  servo_id: 1
+  axis:
+  - Z
+- sim: base_link_Revolute_39
+  ros: NCCUP5_joint
+  leg: 5
+  type: coxa
+  servo_id: 13
+  axis:
+  - Z
+- sim: base_link_Revolute_42
+  ros: NCCUP4_joint
+  leg: 4
+  type: coxa
+  servo_id: 10
+  axis:
+  - Z
+- sim: base_link_Revolute_45
+  ros: NCCUP3_joint
+  leg: 3
+  type: coxa
+  servo_id: 7
+  axis:
+  - Z
+- sim: base_link_Revolute_48
+  ros: NCCUP2_joint
+  leg: 2
+  type: coxa
+  servo_id: 4
+  axis:
+  - Z
+- sim: NCCUP6_Revolute_32
+  ros: NTHIGH6_joint
+  leg: 6
+  type: thigh
+  servo_id: 17
+  axis:
+  - Z
+- sim: NCCUP1_Revolute_35
+  ros: NTHIGH1_joint
+  leg: 1
+  type: thigh
+  servo_id: 2
+  axis:
+  - Z
+- sim: NCCUP5_Revolute_40
+  ros: NTHIGH5_joint
+  leg: 5
+  type: thigh
+  servo_id: 14
+  axis:
+  - Z
+- sim: NCCUP4_Revolute_43
+  ros: NTHIGH4_joint
+  leg: 4
+  type: thigh
+  servo_id: 11
+  axis:
+  - Z
+- sim: NCCUP3_Revolute_46
+  ros: NTHIGH3_joint
+  leg: 3
+  type: thigh
+  servo_id: 8
+  axis:
+  - Z
+- sim: NCCUP2_Revolute_49
+  ros: NTHIGH2_joint
+  leg: 2
+  type: thigh
+  servo_id: 5
+  axis:
+  - Z
+- sim: NTHIGH6_Revolute_51
+  ros: NFOOT6_joint
+  leg: 6
+  type: foot
+  servo_id: 18
+  axis:
+  - Z
+- sim: NTHIGH1_Revolute_52
+  ros: NFOOT1_joint
+  leg: 1
+  type: foot
+  servo_id: 3
+  axis:
+  - Z
+- sim: NTHIGH5_Revolute_56
+  ros: NFOOT5_joint
+  leg: 5
+  type: foot
+  servo_id: 15
+  axis:
+  - Z
+- sim: NTHIGH4_Revolute_55
+  ros: NFOOT4_joint
+  leg: 4
+  type: foot
+  servo_id: 12
+  axis:
+  - Z
+- sim: NTHIGH3_Revolute_54
+  ros: NFOOT3_joint
+  leg: 3
+  type: foot
+  servo_id: 9
+  axis:
+  - Z
+- sim: NTHIGH2_Revolute_53
+  ros: NFOOT2_joint
+  leg: 2
+  type: foot
+  servo_id: 6
+  axis:
+  - Z
+default_joint_pos_rad:
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- -1.5707963705062866
+- -1.5707963705062866
+- -1.5707963705062866
+- -1.5707963705062866
+- -1.5707963705062866
+- -1.5707963705062866
+joint_limits_rad:
+  lower:
+  - -0.7854
+  - -0.7854
+  - -0.7854
+  - -0.7854
+  - -0.7854
+  - -0.7854
+  - -1.5708
+  - -1.5708
+  - -1.5708
+  - -1.5708
+  - -1.5708
+  - -1.5708
+  - -3.1416
+  - -3.1416
+  - -3.1416
+  - -3.1416
+  - -3.1416
+  - -3.1416
+  upper:
+  - 2.3562
+  - 2.3562
+  - 2.3562
+  - 2.3562
+  - 2.3562
+  - 2.3562
+  - 1.5708
+  - 1.5708
+  - 1.5708
+  - 1.5708
+  - 1.5708
+  - 1.5708
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+obs_spec:
+- name: base_ang_vel
+  dim: 3
+  scale: 0.25
+  clip:
+  - -5.0
+  - 5.0
+  frame: base
+  unit: rad/s
+- name: projected_gravity
+  dim: 3
+  scale: 1.0
+- name: velocity_commands
+  dim: 3
+  order:
+  - vx
+  - vy
+  - wz
+- name: joint_pos_rel
+  dim: 18
+  scale: 1.0
+  clip:
+  - -5.0
+  - 5.0
+- name: joint_vel
+  dim: 18
+  scale: 0.05
+  clip:
+  - -5.0
+  - 5.0
+- name: last_action
+  dim: 18
+command_limits:
+  vx:
+  - -0.25
+  - 0.3
+  vy:
+  - -0.2
+  - 0.2
+  wz:
+  - -0.6
+  - 0.6
+actuator_assumptions:
+  delay_policy_steps:
+  - 0
+  - 2
+  kp_scale:
+  - 0.7
+  - 1.3
+  status: NOT_FOR_HARDWARE_UNCALIBRATED
+  fitted_data_source: DATASHEET_ST3215_12V_ASSUMED_5KG_MASS
+provenance:
+  task: Zoe-Hexapod-Flat-Deploy-v0
+  checkpoint: /home/rithwik/SpdrBot-main/logs/rsl_rl/zoe_hexapod_deploy/2026-11-05_19-51-02/model_599.pt
+  git_commit: 1cafe039a0d9c36a8cc03cead9b0c1d799421edf
+  isaaclab_version: v2.3.2
+  date: '2026-11-05T20:46:58.756132'

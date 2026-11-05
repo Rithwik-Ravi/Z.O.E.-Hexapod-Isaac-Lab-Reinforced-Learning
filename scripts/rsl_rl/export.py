@@ -119,15 +119,15 @@ def generate_reference_rollout(env, policy, num_steps=500) -> dict:
 
     with torch.inference_mode():
         for _ in range(num_steps):
-            if isinstance(obs, dict):
+            if not isinstance(obs, torch.Tensor) and "policy" in obs:
                 pol_obs = obs["policy"]
             else:
                 pol_obs = obs
 
-            actions = policy(pol_obs)
+            actions = policy(obs)
 
-            obs_list.append(pol_obs.cpu().numpy())
-            action_list.append(actions.cpu().numpy())
+            obs_list.append(pol_obs.detach().cpu().numpy())
+            action_list.append(actions.detach().cpu().numpy())
 
             cmd = env.unwrapped.command_manager.get_command("base_velocity")
             cmd_list.append(cmd.cpu().numpy())
@@ -159,6 +159,7 @@ def run_export(args_cli):
     from isaaclab_tasks.utils import parse_env_cfg
     from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, RslRlOnPolicyRunnerCfg
     import spdrbot3.tasks
+    from spdrbot3.tasks.manager_based.zoe_deploy.params import ZOE_PARAMS, JOINT_LIMITS_RAD
 
     checkpoint_path = retrieve_file_path(args_cli.checkpoint)
     print(f"[EXPORT] Loading checkpoint from: {checkpoint_path}")
@@ -207,18 +208,21 @@ def run_export(args_cli):
 
     mean_gate_h = float(np.mean(gate_heights))
     non_foot_rate = float(np.mean(gate_non_foot)) * 100.0
-    gate_passed = (mean_gate_h >= 0.1425) and (non_foot_rate < 1.0)
+    gate_min_h = ZOE_PARAMS.GATE_MIN_HEIGHT
+    gate_passed = (mean_gate_h >= gate_min_h) and (non_foot_rate < 1.0)
 
-    print(f"\n[EXPORT] Stance Gate Check: Mean Height={mean_gate_h:.4f}m (Threshold: >=0.1425m), Non-Foot Contacts={non_foot_rate:.2f}% (Threshold: <1.0%)")
+    print(
+        f"\n[EXPORT] Stance Gate Check: Mean Height={mean_gate_h:.4f}m (Threshold: >={gate_min_h:.4f}m), "
+        f"Non-Foot Contacts={non_foot_rate:.2f}% (Threshold: <1.0%)"
+    )
     if not gate_passed:
         if getattr(args_cli, "force", False):
-            print(f"[EXPORT WARNING] Policy FAILED stance gate, but --force flag is present. Proceeding with export...")
+            print("[EXPORT WARNING] Policy FAILED stance gate, but --force flag is present. Proceeding with export...")
         else:
-            print(f"[EXPORT ERROR] Policy FAILED stance gate! Export refused to prevent deploying belly-dragging policies. Use --force to override.")
-            env.close()
-            simulation_app.close()
+            print("[EXPORT ERROR] Policy FAILED stance gate! Export refused to prevent deploying belly-dragging policies. Use --force to override.")
             import sys
-            sys.exit(1)
+            sys.stdout.flush()
+            os._exit(1)
     else:
         print("[EXPORT] Stance gate PASSED ✅")
 
@@ -238,36 +242,52 @@ def run_export(args_cli):
     sim_joint_names = robot.joint_names
     num_joints = len(sim_joint_names)
 
-    # Build Joint Order entries matching the ROS contract
+    # Build Joint Order entries matching the ROS contract & audit report
     joint_order_entries = []
+    joint_limits_lower = []
+    joint_limits_upper = []
     for idx, j_name in enumerate(sim_joint_names):
-        leg_num = None
-        for c in j_name:
-            if c.isdigit():
-                leg_num = int(c)
-                break
-
-        j_type = "coxa"
-        if "CUP" in j_name or "COXA" in j_name or "38" in j_name or "41" in j_name or "44" in j_name or "47" in j_name or "50" in j_name or "53" in j_name:
-            j_type = "coxa"
-            ros_name = f"NCCUP{leg_num}_joint"
-        elif "THIGH" in j_name or "FEMUR" in j_name or "37" in j_name or "40" in j_name or "43" in j_name or "46" in j_name or "49" in j_name or "52" in j_name:
-            j_type = "foot" if "THIGH" in j_name else "thigh"
-            ros_name = f"NFOOT{leg_num}_joint" if j_type == "foot" else f"NTHIGH{leg_num}_joint"
+        j_meta = ZOE_PARAMS.joint_info_by_sim_name.get(j_name)
+        if j_meta is not None:
+            j_type = j_meta["type"]
+            leg_num = int(j_meta["leg"])
+            ros_name = j_meta["ros_name"]
+            servo_id = int(j_meta["servo_id"])
+            axis = list(j_meta["axis"])
         else:
-            ros_name = f"{j_name}_joint"
+            leg_num = idx // 3 + 1
+            for c in j_name:
+                if c.isdigit():
+                    leg_num = int(c)
+                    break
+            if "base_link" in j_name:
+                j_type = "coxa"
+                ros_name = f"NCCUP{leg_num}_joint"
+                k = 1
+            elif "NCCUP" in j_name:
+                j_type = "thigh"
+                ros_name = f"NTHIGH{leg_num}_joint"
+                k = 2
+            else:
+                j_type = "foot"
+                ros_name = f"NFOOT{leg_num}_joint"
+                k = 3
+            servo_id = 3 * (leg_num - 1) + k
+            axis = [0.0, 0.0, -1.0] if j_type == "coxa" else [0.0, -1.0, 0.0]
 
         joint_order_entries.append({
             "sim": j_name,
             "ros": ros_name,
-            "leg": leg_num or (idx // 3 + 1),
+            "leg": leg_num,
             "type": j_type,
+            "servo_id": servo_id,
+            "axis": axis,
         })
+        low, high = JOINT_LIMITS_RAD.get(j_type, (-1.5708, 1.5708))
+        joint_limits_lower.append(round(float(low), 4))
+        joint_limits_upper.append(round(float(high), 4))
 
     default_joint_pos_list = robot.data.default_joint_pos[0].cpu().numpy().tolist()
-
-    joint_limits_lower = [-1.5708] * num_joints
-    joint_limits_upper = [1.5708] * num_joints
 
     obs_spec = [
         {"name": "base_ang_vel", "dim": 3, "scale": 0.25, "clip": [-5.0, 5.0], "frame": "base", "unit": "rad/s"},
@@ -310,8 +330,9 @@ def run_export(args_cli):
         "command_limits": command_limits,
         "actuator_assumptions": {
             "delay_policy_steps": [0, 2],
-            "kp_scale": [0.8, 1.2],
-            "status": "UNCALIBRATED",
+            "kp_scale": [0.7, 1.3],
+            "status": "NOT_FOR_HARDWARE_UNCALIBRATED",
+            "fitted_data_source": "DATASHEET_ST3215_12V_ASSUMED_5KG_MASS",
         },
         "provenance": {
             "task": args_cli.task,
@@ -335,8 +356,9 @@ def run_export(args_cli):
     print(f"[EXPORT] Saved reference rollout to: {ref_path}")
 
     print(f"\n✅ Successfully exported policy package to: {os.path.abspath(out_dir)}")
-    env.close()
-    simulation_app.close()
+    import sys
+    sys.stdout.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":

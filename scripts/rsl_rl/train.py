@@ -28,6 +28,9 @@ parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy 
 parser.add_argument(
     "--distributed", action="store_true", default=False, help="Run training with multiple GPUs or nodes."
 )
+parser.add_argument(
+    "--disable-nan-sanitizer", action="store_true", default=False, help="Disable physics NaN/Inf sanitizer."
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -167,23 +170,32 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
-    # Monkey-patch environment to completely sanitize all NaN/Inf from physics explosions
-    _original_step = env.unwrapped.step
-    def _safe_step(action):
-        obs, rew, terminated, truncated, info = _original_step(action)
-        for k, v in obs.items():
-            obs[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
-        rew = torch.nan_to_num(rew, nan=0.0, posinf=0.0, neginf=0.0)
-        return obs, rew, terminated, truncated, info
-    env.unwrapped.step = _safe_step
+    # Monkey-patch environment to sanitize NaN/Inf from physics explosions unless disabled
+    if not args_cli.disable_nan_sanitizer:
+        nan_count = [0]
+        _original_step = env.unwrapped.step
+        def _safe_step(action):
+            obs, rew, terminated, truncated, info = _original_step(action)
+            has_nan = False
+            for k, v in obs.items():
+                if torch.isnan(v).any() or torch.isinf(v).any():
+                    has_nan = True
+                    obs[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
+            if torch.isnan(rew).any() or torch.isinf(rew).any():
+                has_nan = True
+                rew = torch.nan_to_num(rew, nan=0.0, posinf=0.0, neginf=0.0)
+            if has_nan:
+                nan_count[0] += 1
+            return obs, rew, terminated, truncated, info
+        env.unwrapped.step = _safe_step
 
-    _original_reset = env.unwrapped.reset
-    def _safe_reset(**kwargs):
-        obs, info = _original_reset(**kwargs)
-        for k, v in obs.items():
-            obs[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
-        return obs, info
-    env.unwrapped.reset = _safe_reset
+        _original_reset = env.unwrapped.reset
+        def _safe_reset(**kwargs):
+            obs, info = _original_reset(**kwargs)
+            for k, v in obs.items():
+                obs[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
+            return obs, info
+        env.unwrapped.reset = _safe_reset
 
     # wrap around environment for rsl-rl
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
@@ -235,6 +247,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+    print(f"[INFO] Training complete. Saved checkpoints to: {log_dir}")
+    sys.stdout.flush()
 
     # close the simulator
     env.close()
@@ -243,5 +257,5 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 if __name__ == "__main__":
     # run the main function
     main()
-    # close sim app
-    simulation_app.close()
+    sys.stdout.flush()
+    os._exit(0)

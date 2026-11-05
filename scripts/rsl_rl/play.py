@@ -29,6 +29,7 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument("--export", action="store_true", default=False, help="Export checkpoint to deploy directory format.")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -115,6 +116,13 @@ def main():
 
     # obtain the trained policy for inference
     policy = ppo_runner.get_inference_policy(device=env.unwrapped.device)
+
+    if args_cli.export:
+        print("[INFO] Exporting policy artifacts...")
+        from export import export_policy
+        export_dir = os.path.join("deploy", os.path.basename(log_dir))
+        export_policy(ppo_runner, env.unwrapped, export_dir)
+        print(f"[INFO] Policy exported successfully to {export_dir}")
 
     dt = env.unwrapped.step_dt
 

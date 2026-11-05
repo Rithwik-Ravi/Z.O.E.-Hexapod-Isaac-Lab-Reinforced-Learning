@@ -28,3 +28,13 @@ def invalid_state_nan(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = None) 
     env.extras["nan_counter"] += nan_count
 
     return is_invalid
+
+
+def bad_orientation(
+    env: ManagerBasedRLEnv, limit_angle: float, asset_cfg: SceneEntityCfg = None
+) -> torch.Tensor:
+    """Terminate when the asset's orientation is too far from upright (-Z of base_link pointing up)."""
+    name = getattr(asset_cfg, "name", "robot") if asset_cfg is not None else "robot"
+    robot = env.scene[name]
+    # In hexa.urdf, -Z of base_link is UP (where DCAM is), so upright projected_gravity_b[:, 2] is +1.0
+    return torch.acos(torch.clamp(robot.data.projected_gravity_b[:, 2], -1.0, 1.0)).abs() > limit_angle

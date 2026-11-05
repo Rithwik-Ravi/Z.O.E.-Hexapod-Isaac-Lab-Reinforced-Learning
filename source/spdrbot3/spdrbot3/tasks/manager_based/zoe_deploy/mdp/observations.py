@@ -52,3 +52,20 @@ def belly_contact_flag(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> to
     contact_sensor = env.scene[sensor_cfg.name]
     net_forces_z = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]
     return (net_forces_z > 1.0).any(dim=1, keepdim=True).float()
+
+
+def joint_pos_rel_calibrated(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = None) -> torch.Tensor:
+    """Joint position relative to default pose, with persistent calibration zero-offset subtracted [N, 18].
+    
+    Models real servo encoder calibration error: if joint has zero offset delta, the servo potentiometer
+    reads (q_sim - delta) relative to true neutral.
+    """
+    if asset_cfg is None and hasattr(SceneEntityCfg, "__call__"):
+        asset_cfg = SceneEntityCfg("robot")
+    name = getattr(asset_cfg, "name", "robot")
+    robot = env.scene[name]
+    rel_pos = robot.data.joint_pos - robot.data.default_joint_pos
+    if hasattr(env, "joint_calibration_offsets") and env.joint_calibration_offsets is not None:
+        rel_pos = rel_pos - env.joint_calibration_offsets
+    return rel_pos
+

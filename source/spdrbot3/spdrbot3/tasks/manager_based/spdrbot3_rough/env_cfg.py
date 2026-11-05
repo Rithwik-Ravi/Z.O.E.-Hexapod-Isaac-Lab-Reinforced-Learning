@@ -149,7 +149,7 @@ class EventCfg:
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="base_link_v1"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*base_link.*"),
             "mass_distribution_params": (0.0, 0.5),
             "operation": "add",
         },
@@ -214,7 +214,7 @@ class CommandsCfg:
         rel_heading_envs=1.0,
         heading_command=True,
         heading_control_stiffness=0.5,
-        debug_vis=False,
+        debug_vis=True,
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
             lin_vel_x=(-1.0, 1.0), lin_vel_y=(-1.0, 1.0), ang_vel_z=(-1.0, 1.0), heading=(-math.pi, math.pi)
         ),
@@ -225,10 +225,10 @@ class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     base_contact = DoneTerm(
         func=mdp.illegal_contact,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="base_link_v1"), "threshold": 1.0},
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*base_link.*"), "threshold": 1.0},
     )
     bad_orientation = DoneTerm(
-        func=mdp.bad_orientation,
+        func=lambda env, limit_angle: torch.acos(torch.clamp(env.scene["robot"].data.projected_gravity_b[:, 2], -1.0, 1.0)).abs() > limit_angle,
         params={"limit_angle": math.pi / 2.0}
     )
 

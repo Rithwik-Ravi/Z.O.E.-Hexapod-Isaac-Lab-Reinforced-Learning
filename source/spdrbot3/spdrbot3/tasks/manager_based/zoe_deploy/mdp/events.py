@@ -13,6 +13,9 @@ except Exception:
     SceneEntityCfg = object
 
 
+from ..params import ZOE_PARAMS
+
+
 def reset_root_near_ground(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
@@ -29,7 +32,7 @@ def reset_root_near_ground(
 
     x_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("x", (0.0, 0.0))).to(env.device)
     y_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("y", (0.0, 0.0))).to(env.device)
-    z_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("z", (0.17, 0.19))).to(env.device)
+    z_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("z", ZOE_PARAMS.SPAWN_Z_RANGE)).to(env.device)
 
     # Spread robots assigned to the same tile across a 3x3 sub-grid (-0.6m to +0.6m) on the platform
     env_idx = env_ids % 9
@@ -42,10 +45,11 @@ def reset_root_near_ground(
 
     yaw_rand = torch.FloatTensor(num_resets).uniform_(*pose_range.get("yaw", (-3.14, 3.14))).to(env.device)
     half_yaw = yaw_rand * 0.5
-    root_states[:, 3] = torch.cos(half_yaw)
-    root_states[:, 4] = 0.0
-    root_states[:, 5] = 0.0
-    root_states[:, 6] = torch.sin(half_yaw)
+    # Compose world yaw (cos(psi/2), 0, 0, sin(psi/2)) with upright 180-deg X-roll (0, 1, 0, 0)
+    root_states[:, 3] = 0.0
+    root_states[:, 4] = torch.cos(half_yaw)
+    root_states[:, 5] = torch.sin(half_yaw)
+    root_states[:, 6] = 0.0
 
     root_states[:, 7] = torch.FloatTensor(num_resets).uniform_(*velocity_range.get("x", (0.0, 0.0))).to(env.device)
     root_states[:, 8] = torch.FloatTensor(num_resets).uniform_(*velocity_range.get("y", (0.0, 0.0))).to(env.device)
