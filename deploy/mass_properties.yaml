@@ -1,0 +1,23 @@
+# Physical Mass Properties Specification for Z.O.E. Hexapod (New Asset: hexa_ir)
+# Source: docs/ASSUMPTIONS.md & deploy/asset_report.json
+calibrated: false
+mass_status: UNVERIFIED_ASSUMPTION_5KG_FROM_OLD_ROBOT
+
+assumed_masses:
+  assumed_total_robot_kg: 5.000
+  mass_randomization_scale_range: [0.90, 1.10]
+  feasibility_sweep_masses_kg: [4.0, 5.0, 6.0]
+
+cad_asset_masses:
+  cad_total_without_dcam_kg: 4.1662
+  cad_total_with_dcam_kg: 4.5255
+  cad_dcam_commented_out_kg: 0.3593
+  cad_base_link_kg: 2.5027
+  cad_per_coxa_nccup_kg: 0.0150
+  cad_per_thigh_nthigh_kg: 0.2155
+  cad_per_foot_nfoot_kg: 0.0467
+  cad_single_leg_sum_kg: 0.2772
+
+measured_hardware_masses:
+  measured_new_robot_total_kg: "TODO: PENDING_OWNER_MEASUREMENT"
+  measured_old_robot_total_kg: 5.000

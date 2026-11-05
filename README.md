@@ -13,6 +13,9 @@
 
 By combining Proximal Policy Optimization (PPO), custom force-contact reward engineering, self-collision prevention, and dynamic numerical stabilization, Z.O.E. learns natural locomotion completely from scratch in GPU simulation without relying on reference motion capture (mocap) data or external network USD downloads.
 
+> [!WARNING]
+> **Deprecation Notice (`Zoe-Hexapod-Rough-v0`)**: The legacy task `Zoe-Hexapod-Rough-v0` (and `source/spdrbot3/spdrbot3/tasks/manager_based/spdrbot3_rough/`) is **DEPRECATED** and retained only for historical reference. All active development, hardware-aligned actuator modeling, gate evaluation, and sim-to-real policy export use **`Zoe-Hexapod-Flat-Deploy-v0`** (Stage 1) and **`Zoe-Hexapod-Terrain-v0`** (Stage 2) under `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/`. See [`docs/TRAINING_RECIPE.md`](docs/TRAINING_RECIPE.md) and [`docs/EXISTING_STATE.md`](docs/EXISTING_STATE.md).
+
 > **Simulation & Hardware Notice**
 >
 > This repository requires **NVIDIA Isaac Sim 4.5** / **Isaac Lab** with an NVIDIA GPU supporting CUDA (PhysX GPU acceleration). Ensure GPU Persistence Mode is enabled (`sudo nvidia-smi -pm 1`) prior to running high-throughput parallel training or real-time inference.

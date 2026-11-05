@@ -1,30 +1,25 @@
-actuator_assumptions:
-  deadband_deg: 0.5
-  max_speed_rad_s: 6.0
-  stall_torque_nm: 2.5
-  tau_ms: 10.0
-coxa:
-  deadband_deg: 0.5
-  delay_ms: 20.0
-  kd: 1.5
-  kp: 15.0
-  max_speed_rad_s: 6.0
-  stall_torque_nm: 2.5
-  tau_ms: 10.0
-foot:
-  deadband_deg: 0.5
-  delay_ms: 20.0
-  kd: 1.5
-  kp: 15.0
-  max_speed_rad_s: 6.0
-  stall_torque_nm: 2.5
-  tau_ms: 10.0
+# Actuator Model Specification for Waveshare ST3215 (12V Serial Bus Servo)
+# Datasheet Source: https://www.waveshare.com/wiki/ST3215_Servo (30 kg.cm @ 12V, 0.222s/60deg = 45 RPM)
+# Owner Facts & Assumptions Source: docs/ASSUMPTIONS.md
 status: UNCALIBRATED
-thigh:
-  deadband_deg: 0.5
-  delay_ms: 20.0
-  kd: 1.5
-  kp: 15.0
-  max_speed_rad_s: 6.0
-  stall_torque_nm: 2.5
-  tau_ms: 10.0
+fitted_data_source: WAVESHARE_ST3215_12V_DATASHEET_AND_OWNER_FACTS
+servo_model: Waveshare_ST3215_12V
+battery_type: 3S_LiPo_Direct
+supply_voltage_v_range: [11.4, 12.0]
+total_current_a_range: [12.0, 18.0]
+bus_baud_rate: 1000000
+servo_id_formula: "3*(leg-1)+k (k=1 coxa, 2 thigh, 3 foot)"
+fault_behavior: HOLD_POSITION
+stall_torque_12v_kg_cm: 30.0
+stall_torque_12v_nm: 2.942
+effort_limit_margin_ratio: 0.85
+effort_limit_sim_nm: 2.50
+torque_saturation_threshold_nm: 2.45
+no_load_speed_12v_sec_per_60deg: 0.222
+no_load_speed_12v_rpm: 45.0
+no_load_speed_12v_rad_s: 4.71
+kp: 16.0
+kd: 1.6
+delay_ms: 20.0
+tau_ms: 10.0
+deadband_deg: 0.5

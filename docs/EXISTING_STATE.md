@@ -177,25 +177,37 @@ ESP32 #2 (IMU) -> "ROLL:..,PITCH:..,..\n" -> lidar_esp.py -> /imu/data (no gyro)
 - **New Files Created**:
   - `source/spdrbot3/spdrbot3/assets/zoe_hexapod.py` (New articulation config with dynamic portable USD resolution)
   - `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/__init__.py` (Task registrations)
-  - `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/params.py` (Dataclass single source of truth for all tunables)
+  - `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/params.py` (Dataclass single source of truth for all tunables, derived from `deploy/asset_report.json` and `deploy/actuator_model.yaml`)
   - `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/terrains.py` (Flat + Multi-terrain generator configs)
   - `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/env_cfg_flat.py` & `env_cfg_terrain.py` (Stage 1 & Stage 2 env configs)
   - `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/mdp/*` (`observations.py`, `rewards.py`, `events.py`, `curriculum.py`, `actions.py`, `terminations.py`)
   - `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/agents/rsl_rl_ppo_cfg.py` (PPO runner config)
-  - `scripts/audit_asset.py` (M0 USD asset auditor script)
+  - `scripts/audit_asset.py` (M0 USD/URDF asset auditor script)
   - `scripts/fit_actuator_sim.py` (M1 Actuator step-response calibration script)
-  - `scripts/rsl_rl/export.py` (M4 Policy exporter script)
+  - `scripts/rsl_rl/export.py` (M4 Policy exporter script with stance gate and `NOT_FOR_HARDWARE_UNCALIBRATED` contract)
   - `scripts/eval_robustness.py` (M5 Policy robustness evaluation script)
-  - `tests/test_params.py`, `tests/test_curriculum.py`, `tests/test_export.py` (Unit tests)
-  - `deploy/actuator_model.yaml` & `deploy/asset_report.json` (Contract metadata and asset report)
-  - `scripts/diagnose_stance.py` & `scripts/diagnose_offline.py` (Stance diagnostic scripts)
-  - `scripts/eval_honest_gate.py` (Quantitative stance gate across 3 conditions)
-  - `scripts/eval_gait_report.py` (Single-env 10s gait analysis & tripod alternation verification)
-  - `scripts/inspect_stance_geometry.py` (Link frame, foot tip polar coordinates, and symmetry inspector)
+  - `tests/test_params.py`, `tests/test_curriculum.py`, `tests/test_export.py` (14 unit tests including YAML duplicate-key check, derived constants, and 3D foot tip transforms)
+  - `deploy/actuator_model.yaml` & `deploy/asset_report.json` (Deduplicated contract metadata and audited asset report)
+  - `deploy/mass_properties.yaml` (Deduplicated mass reference and native CAD breakdown)
+  - `scripts/chunk_check.py` (3-condition parallel gate verification suite with report-only yaw and strafe tracking)
+  - `scripts/eval_gait_report.py` (Single-env 10s gait analysis & tripod alternation verification with 3D foot tip kinematics)
+  - `scripts/verify_reward_budgets.py` (Analytical reward budget verifier)
+  - `scripts/analysis/*` (One-off diagnostic and sweep scripts: `sweep_default_pose.py`, `apply_5kg_mass_model.py`, `eval_honest_gate.py`, `diagnose_stance.py`, `diagnose_offline.py`, `inspect_stance_geometry.py`, `run_clean_stance_comparison.py`, `run_kp_grid_search.py`, `run_pose_grid_search.py`, `stance_gate.py`)
+  - `docs/CHUNK_LOG.md` (Gate execution log for all chunk checks)
   - `docs/TRAINING_RECIPE.md` (Reproduction guide)
   - `docs/AUDIT_A_REPORT.md` (Read-only technical audit report)
   - `docs/DIAG_STANCE_REPORT.md` (Phase 1 stance diagnosis report)
   - `docs/STAGE1_READINESS_REPORT.md` (Stage 1 readiness, stance geometry, honest gate, and probe evaluation report)
+  - `docs/CLEANUP_PLAN.md` (Two-stage cleanup inventory and plan)
+
+### 6.2 Current Replacement Robot (`hexa_ir`, 2026-11-05)
+- **Active Asset**: `hexapod/hexa/hexa.usd` (converted from `hexapod/hexa.urdf` where `DCAM` link and `base_link_Rigid-57` fixed joint are commented out).
+- **Bodies & Joints**: 19 bodies (`base_link` + 6 legs x `NCCUP` / `NTHIGH` / `NFOOT`), 18 revolute joints (`Revolute_39..56`).
+- **Simulator Joint Order**: Depth-grouped `[coxa x 6, thigh x 6, foot x 6]`, leg order `[6, 1, 5, 4, 3, 2]` (`Revolute_56, 39, 53, 50, 47, 44`, `Revolute_55, 40, 52, 49, 46, 43`, `Revolute_54, 41, 51, 48, 45, 42`).
+- **Default Standing Pose**: Coxa `0.0 rad`, Thigh `0.0 rad`, Foot `-1.5707963267948966 rad` (`-pi/2`). All-zero joints (`0,0,0`) is a horizontal T-pose (`0.0032 m` settled height).
+- **Standing Height**: `0.1476 m` kinematic / `0.1427 m` settled under gravity at native CAD mass (`4.1662 kg`) and `0.1422 m` at `5.00 kg`.
+- **Frozen Gate Thresholds**: `GATE_MIN_HEIGHT = 0.90 * 0.1427 = 0.1284 m`; `TARGET_STANDING_HEIGHT = 0.95 * 0.1427 = 0.1356 m`.
+- **Owner Hardware Facts**: 3S LiPo battery (`11.4–12.0 V` directly to servos, `12–18 A` total current); Waveshare ST3215 12V servos (`2.942 N·m` stall torque, `4.71 rad/s` no-load speed, `2.50 N·m` 85% effort limit, `1,000,000` baud, servo IDs `3*(leg-1)+k`); no servo feedback, IMU, or E-stop yet (hold last position on fault).
 
 ---
 
@@ -204,5 +216,23 @@ ESP32 #2 (IMU) -> "ROLL:..,PITCH:..,..\n" -> lidar_esp.py -> /imu/data (no gyro)
 - **2026-10-06**: Verified ground truth codebase state against defects A1-A26. Updated `docs/EXISTING_STATE.md` with Section 6 listing all files, tasks, and contract specs built for the deployable pipeline. All 7 unit tests verified passing (`pytest`).
 - **2026-10-10 (AM)**: Completed Phase 1 read-only stance diagnosis. Identified root cause of belly-dragging gait (H1 confirmed: IK angles applied as USD joint targets; H2 confirmed: 0.17m reset height; H3 refuted: 2.5 N.m servo limit provides >78% torque headroom). Created `scripts/diagnose_stance.py`, `scripts/diagnose_offline.py`, and `docs/DIAG_STANCE_REPORT.md`.
 - **2026-10-10 (PM)**: Implemented Phase 2 stance fixes: calibrated nominal standing base height to 0.158m, restored USD zero default pose (0.0 rad), expanded illegal contact terminations to chassis and coxa cups, added thigh contact penalty, implemented shaped base height reward (exponential attractor + barrier below 0.148m), added 4 unweighted TensorBoard metrics, and updated `export.py` to refuse export if the checkpoint fails the stance gate (overrideable via `--force`). Ran 300-iteration probe (`logs/rsl_rl/zoe_hexapod_deploy/2026-10-10_19-01-52/model_299.pt`); achieved mean walking height 0.1539m, confirmed true alternating tripod gait (cross-correlation -0.9813), and documented full audit in `docs/STAGE1_READINESS_REPORT.md`.
+- **2026-10-12**: 5.0 kg Mass Model, Frozen Gate Suite, & Autonomous Probe Loop:
+  1. Applied parametric 5.00 kg mass model to `hexapod/hexa/hexa.usd` (backup at `hexa_orig.usd`) with `deploy/mass_properties.yaml` and `docs/ASSUMPTIONS.md`. Verified total simulated mass = 4.9999995 kg in `deploy/asset_report.json`.
+  2. Executed pose sweep (`scripts/sweep_default_pose.py`): verified vertical ground reaction force strictly equals $M g = 49.05\text{ N}$ ($F_z / (M g) = 1.0000$). Validated Candidate 0 (USD zero stance convention: 0.0 rad) as lowest resting torque (1.044 N.m).
+  3. Overhauled rewards: tightened velocity tracking kernels ($\sigma_v = 0.13\text{ m/s}, \sigma_\omega = 0.25\text{ rad/s}$), added `stand_still_feet_grounded`. Proved walking reward advantage (+102.17 / s, 2.25x standing still) in `scripts/verify_reward_budgets.py`.
+  4. Redesigned and froze 3-condition parallel gate suite in `scripts/chunk_check.py` (Zero Command 5s, Forward Walk 0.15 m/s 10s, Push Recovery 8s with 0.3–0.5 m/s impulses).
+  5. Executed 6 autonomous 600-iteration probes with single-variable changes:
+     - **Probe 1**: Baseline at 5kg, 1.9 N.m. Speed 0.1463 m/s, tripod correlation -0.8468, 0 falls. Torque sat failed (15.55% / 25.77%).
+     - **Probe 2**: Increased torque penalty (`dof_torques_l2 = -0.005`). Torque sat failed due to statics limit (1.887 N.m required vs 1.90 N.m stall limit).
+     - **Probe 3**: Effort limit updated to 2.50 N.m per user prompt directive for STS3215 at 8.4V–11.1V. Zero-cmd sat dropped 3x to 5.44%. Stability margin failed due to narrow 0.25 rad action scale.
+     - **Probe 4**: Action scale doubled to 0.50 rad ($28.6^\circ$). Action noise std converged to 0.28. Stability margin failed due to aggressive 0.155m height target.
+     - **Probe 5**: Relaxed target height to 0.150m (min height 0.1425m). Stability margin surged 85% from -0.0953m to -0.0142m (mean positive at +0.0088m).
+     - **Probe 6**: Reduced stiffness to $K_p = 16.0, K_d = 1.6$. Stability margin climbed to **-0.0032m** (mean +0.0170m, within 3.2 mm of threshold). Zero-cmd torque sat dropped to **4.33%**. Speed reached 0.1514 m/s (101% tracking), alternating tripod correlation confirmed at **-0.7319**, 0 falls.
+  6. Concluded autonomous probe sequence with honest hardware feasibility assessment: 3-foot dynamic tripod walking at 5.0–6.0 kg operates directly at the physical 2.50 N.m stall limit of STS3215 servos.
+- **2026-11-05**: Replacement Robot (`hexa_ir`) Audit, Constants Derivation, Owner Hardware Facts, Re-Validation & Stage A Cleanup:
+  1. Audited new `hexa_ir` asset (`hexapod/hexa/hexa.usd` & `hexapod/hexa.urdf`, `DCAM` commented out) via `scripts/audit_asset.py` into `deploy/asset_report.json`: confirmed root `base_link`, 18 joints in simulator leg order `[6, 1, 5, 4, 3, 2]`, native CAD mass `4.1662 kg`, standing height `0.1427 m` at default pose `(0, 0, -pi/2)`, and per-leg 3D local foot-tip vectors.
+  2. Derived model constants in `params.py` directly from `deploy/asset_report.json` and `deploy/actuator_model.yaml`, keeping gate ratios frozen (`0.90 -> 0.1284 m`, `0.95 -> 0.1356 m`). Fixed `contact_sensor.body_names` vs `robot.body_names` index mapping in `rewards.py`, `chunk_check.py`, `eval_gait_report.py`, and `sweep_default_pose.py`. Added `torque_limit_penalty`, `fewer_than_4_feet_contact`, and $\pm 10\%$ mass randomization.
+  3. Recorded authoritative owner facts in `docs/ASSUMPTIONS.md` and deduplicated `deploy/actuator_model.yaml` and `deploy/mass_properties.yaml` (enforced by unit test `test_no_duplicate_yaml_keys`).
+  4. Re-validated: 14/14 unit tests pass, reward budgets verified (`+181.17 /s` walking vs `+81.50 /s` standing), 4/5/6 kg stance & torque sweep completed, 50-iter smoke test passed, and 600-iter probe (`2026-11-05_19-51-02`) achieved **12/15 gate metrics PASS** including **static stability `p5 = +0.0472 m` (PASS)**, forward speed `0.1518 m/s` (PASS), `0 falls` (PASS), tripod correlation `r = -0.8551`, and reduced torque saturation (`2.92% / 10.19% / 10.48%`). Verified `NOT_FOR_HARDWARE_UNCALIBRATED` software export.
 
 
