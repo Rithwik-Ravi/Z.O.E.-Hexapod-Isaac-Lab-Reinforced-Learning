@@ -2,4 +2,12 @@ logs/
 outputs/
 __pycache__/
 *.pyc
+.pytest_cache/
 .pretrained_checkpoints/
+deploy/*
+!deploy/actuator_model.yaml
+!deploy/mass_properties.yaml
+!deploy/asset_report.json
+!deploy/test_export_not_for_hardware/
+deploy/test_export_not_for_hardware/*
+!deploy/test_export_not_for_hardware/deploy.yaml
