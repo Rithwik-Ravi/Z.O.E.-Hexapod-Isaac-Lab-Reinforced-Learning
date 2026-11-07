@@ -8,6 +8,7 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import os
 import sys
 
 from isaaclab.app import AppLauncher
@@ -36,6 +37,19 @@ cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
+
+# A5(b) Early validation before launching Omniverse: if an explicit file path is passed to --checkpoint
+# and does not exist, fail loudly immediately with exit code 2.
+if args_cli.checkpoint is not None and (
+    os.sep in args_cli.checkpoint or (os.altsep and os.altsep in args_cli.checkpoint)
+):
+    if not os.path.isfile(args_cli.checkpoint):
+        print(
+            f"[ERROR] Checkpoint file specified via --checkpoint does not exist: '{args_cli.checkpoint}'",
+            file=sys.stderr,
+            flush=True,
+        )
+        sys.exit(2)
 
 # always enable cameras to record video
 if args_cli.video:
@@ -72,9 +86,12 @@ if args_cli.distributed and version.parse(installed_version) < version.parse(RSL
 
 """Rest everything follows."""
 
+import collections
 import gymnasium as gym
-import os
+import pickle
+import statistics
 import torch
+import yaml
 from datetime import datetime
 
 from rsl_rl.runners import OnPolicyRunner
@@ -89,12 +106,12 @@ from isaaclab.envs import (
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.io import dump_yaml
 
-import pickle
 
 def dump_pickle(filepath: str, data: any):
     """Save data to pickle file."""
     with open(filepath, "wb") as f:
         pickle.dump(data, f)
+
 
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 
@@ -121,7 +138,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     )
 
     # set the environment seed
-    # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
@@ -130,7 +146,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env_cfg.sim.device = f"cuda:{app_launcher.local_rank}"
         agent_cfg.device = f"cuda:{app_launcher.local_rank}"
 
-        # set seed to have diversity in different threads
         seed = agent_cfg.seed + app_launcher.local_rank
         env_cfg.seed = seed
         agent_cfg.seed = seed
@@ -139,9 +154,31 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
+
+    # A5(a) & A5(b): Resolve resume checkpoint BEFORE creating log_dir or environment.
+    # Fails loudly with exit code 2 if --resume / --load_run / --checkpoint cannot be resolved.
+    resume_path = None
+    if (
+        agent_cfg.resume
+        or args_cli.resume
+        or args_cli.checkpoint is not None
+        or args_cli.load_run is not None
+        or agent_cfg.algorithm.class_name == "Distillation"
+    ):
+        try:
+            resume_path = cli_args.resolve_resume_checkpoint(
+                log_root_path, agent_cfg, args_cli, get_checkpoint_path_fn=get_checkpoint_path
+            )
+        except Exception as exc:
+            print(f"\n[ERROR] Resume checkpoint resolution failed: {exc}", file=sys.stderr, flush=True)
+            sys.stdout.flush()
+            os._exit(2)
+    else:
+        agent_cfg.resume_from = None
+
     # specify directory for logging runs: {time-stamp}_{run_name}
     log_dir = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    # The Ray Tune workflow extracts experiment name using the logging line below, hence, do not change it (see PR #2346, comment-2819298849)
+    # The Ray Tune workflow extracts experiment name using the logging line below, hence, do not change it
     print(f"Exact experiment name requested from command line: {log_dir}")
     if agent_cfg.run_name:
         log_dir += f"_{agent_cfg.run_name}"
@@ -153,10 +190,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
         env = multi_agent_to_single_agent(env)
-
-    # save resume path before creating a new log_dir
-    if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
 
     # wrap for video recording
     if args_cli.video:
@@ -174,6 +207,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if not args_cli.disable_nan_sanitizer:
         nan_count = [0]
         _original_step = env.unwrapped.step
+
         def _safe_step(action):
             obs, rew, terminated, truncated, info = _original_step(action)
             has_nan = False
@@ -187,14 +221,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             if has_nan:
                 nan_count[0] += 1
             return obs, rew, terminated, truncated, info
+
         env.unwrapped.step = _safe_step
 
         _original_reset = env.unwrapped.reset
+
         def _safe_reset(**kwargs):
             obs, info = _original_reset(**kwargs)
             for k, v in obs.items():
                 obs[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
             return obs, info
+
         env.unwrapped.reset = _safe_reset
 
     # wrap around environment for rsl-rl
@@ -204,8 +241,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
 
     # Monkey-patch ActorCritic to prevent NaN std from crashing training.
-    # When PhysX produces extreme observations, PPO gradients can corrupt network weights,
-    # causing std = exp(log_std) to become NaN. This clamp ensures std is always valid.
     import types
     from torch.distributions import Normal as _Normal
 
@@ -223,7 +258,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 std = self.std.expand_as(mean)
             elif self.noise_std_type == "log":
                 std = torch.exp(self.log_std).expand_as(mean)
-        # Sanitize: replace NaN with 0 for mean, clamp std to be strictly positive
         mean = torch.nan_to_num(mean, nan=0.0, posinf=0.0, neginf=0.0)
         std = torch.nan_to_num(std, nan=1.0, posinf=1.0, neginf=1.0)
         std = torch.clamp(std, min=1e-6)
@@ -233,17 +267,91 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # write git state to logs
     runner.add_git_repo_to_log(__file__)
-    # load the checkpoint
-    if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
+
+    # A5(c): Load the checkpoint and print prominent banner
+    if resume_path is not None:
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
-        # load previously trained model
         runner.load(resume_path)
+        loaded_iter = int(getattr(runner, "current_learning_iteration", 0))
+        print("\n" + "=" * 80)
+        print(f"RESUMED from {resume_path} (iteration {loaded_iter})")
+        print("=" * 80 + "\n", flush=True)
+    else:
+        print("\n" + "=" * 80)
+        print("FROM SCRATCH")
+        print("=" * 80 + "\n", flush=True)
 
     # dump the configuration into log-directory
+    agent_yaml_path = os.path.join(log_dir, "params", "agent.yaml")
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
-    dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+    dump_yaml(agent_yaml_path, agent_cfg)
+    # Ensure resume_from is explicitly persisted in params/agent.yaml
+    if os.path.isfile(agent_yaml_path):
+        with open(agent_yaml_path, "r") as f:
+            agent_yaml_data = yaml.safe_load(f) or {}
+        agent_yaml_data["resume_from"] = resume_path
+        with open(agent_yaml_path, "w") as f:
+            yaml.safe_dump(agent_yaml_data, f, sort_keys=False)
+
     dump_pickle(os.path.join(log_dir, "params", "env.pkl"), env_cfg)
     dump_pickle(os.path.join(log_dir, "params", "agent.pkl"), agent_cfg)
+
+    # A5(d): Early-abort watchdog hook
+    watchdog_iters = int(getattr(args_cli, "watchdog_iterations", 150))
+    start_iter = int(getattr(runner, "current_learning_iteration", 0))
+    reward_history: list[float] = []
+    timeout_window: collections.deque[float] = collections.deque(maxlen=25)
+    _orig_runner_log = runner.log
+
+    def _watchdog_log(locs: dict):
+        _orig_runner_log(locs)
+        cur_it = int(locs.get("it", start_iter))
+        iters_run = cur_it - start_iter + 1
+
+        mean_ep_len = float(statistics.mean(runner.lenbuffer)) if len(runner.lenbuffer) > 0 else 0.0
+        mean_rew = float(statistics.mean(runner.rewbuffer)) if len(runner.rewbuffer) > 0 else 0.0
+        reward_history.append(mean_rew)
+
+        ep_infos = locs.get("ep_infos", [])
+        to_vals = []
+        for ep_info in ep_infos:
+            for k in ("Episode_Termination/time_out", "time_out"):
+                if k in ep_info:
+                    val = ep_info[k]
+                    to_vals.append(float(val.item() if hasattr(val, "item") else val))
+                    break
+        if to_vals:
+            timeout_window.append(sum(to_vals) / float(len(to_vals)))
+
+        if len(timeout_window) > 0:
+            time_out_rate = sum(timeout_window) / float(len(timeout_window))
+        else:
+            time_out_rate = 1.0 if mean_ep_len >= 100.0 else 0.0
+
+        lr = getattr(runner.alg, "learning_rate", None)
+        should_abort, reasons, lr_warning = cli_args.evaluate_watchdog(
+            iters_run=iters_run,
+            watchdog_iters=watchdog_iters,
+            mean_ep_len=mean_ep_len,
+            time_out_rate=time_out_rate,
+            reward_history=reward_history,
+            learning_rate=lr,
+        )
+        if lr_warning is not None:
+            print(lr_warning, flush=True)
+        if should_abort:
+            print("\n" + "!" * 80, file=sys.stderr)
+            print(
+                f"[WATCHDOG ABORT] Training stopped at iteration {cur_it} ({iters_run} iterations run):",
+                file=sys.stderr,
+            )
+            for reason in reasons:
+                print(f"  - {reason}", file=sys.stderr)
+            print("!" * 80 + "\n", file=sys.stderr, flush=True)
+            sys.stdout.flush()
+            os._exit(3)
+
+    runner.log = _watchdog_log
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
@@ -255,7 +363,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
 
 if __name__ == "__main__":
-    # run the main function
     main()
     sys.stdout.flush()
     os._exit(0)
