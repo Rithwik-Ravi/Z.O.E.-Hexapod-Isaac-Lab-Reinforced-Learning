@@ -111,7 +111,11 @@ def zoe_terrain_curriculum(
     name = getattr(asset_cfg, "name", "robot") if asset_cfg is not None else "robot"
     robot = env.scene[name]
 
-    episode_length = env.episode_length_buf[env_ids].float() * env.step_dt
+    steps_walked = env.episode_length_buf[env_ids]
+    if hasattr(env, "_last_reset_step") and env._last_reset_step is not None and hasattr(env, "common_step_counter"):
+        actual_steps = (int(env.common_step_counter) - env._last_reset_step[env_ids]).clamp(min=0)
+        steps_walked = torch.minimum(steps_walked, actual_steps)
+    episode_length = steps_walked.float() * env.step_dt
     vel_cmd = env.command_manager.get_command("base_velocity")[env_ids]
     cmd_speed = torch.norm(vel_cmd[:, :2], dim=-1)
     commanded_distance = cmd_speed * episode_length

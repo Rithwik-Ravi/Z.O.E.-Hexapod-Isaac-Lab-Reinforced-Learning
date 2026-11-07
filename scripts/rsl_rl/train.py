@@ -308,18 +308,31 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         cur_it = int(locs.get("it", start_iter))
         iters_run = cur_it - start_iter + 1
 
-        mean_ep_len = float(statistics.mean(runner.lenbuffer)) if len(runner.lenbuffer) > 0 else 0.0
-        mean_rew = float(statistics.mean(runner.rewbuffer)) if len(runner.rewbuffer) > 0 else 0.0
+        lenbuf = locs.get("lenbuffer", getattr(runner, "lenbuffer", []))
+        rewbuf = locs.get("rewbuffer", getattr(runner, "rewbuffer", []))
+        mean_ep_len = float(statistics.mean(lenbuf)) if len(lenbuf) > 0 else 0.0
+        mean_rew = float(statistics.mean(rewbuf)) if len(rewbuf) > 0 else 0.0
         reward_history.append(mean_rew)
 
         ep_infos = locs.get("ep_infos", [])
         to_vals = []
         for ep_info in ep_infos:
-            for k in ("Episode_Termination/time_out", "time_out"):
-                if k in ep_info:
-                    val = ep_info[k]
-                    to_vals.append(float(val.item() if hasattr(val, "item") else val))
-                    break
+            if "Terrain/Survival" in ep_info:
+                val = ep_info["Terrain/Survival"]
+                to_vals.append(float(val.item() if hasattr(val, "item") else val))
+                continue
+            term_keys = [k for k in ep_info.keys() if k.startswith("Episode_Termination/")]
+            if term_keys:
+                tot_term = 0.0
+                to_term = 0.0
+                for k in term_keys:
+                    v = ep_info[k]
+                    fv = float(v.item() if hasattr(v, "item") else v)
+                    tot_term += fv
+                    if k.endswith("time_out"):
+                        to_term = fv
+                if tot_term > 1e-6:
+                    to_vals.append(to_term / tot_term)
         if to_vals:
             timeout_window.append(sum(to_vals) / float(len(to_vals)))
 

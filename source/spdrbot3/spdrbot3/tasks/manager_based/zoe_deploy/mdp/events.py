@@ -53,6 +53,10 @@ def reset_root_near_ground(
 
     robot.write_root_state_to_sim(root_states, env_ids=env_ids)
 
+    if not hasattr(env, "_last_reset_step") or env._last_reset_step is None:
+        env._last_reset_step = torch.zeros(env.num_envs, device=env.device, dtype=torch.long)
+    env._last_reset_step[env_ids] = int(getattr(env, "common_step_counter", 0))
+
     scanner = _get_scene_entity(env.scene, "height_scanner")
     if scanner is not None:
         try:
@@ -62,6 +66,10 @@ def reset_root_near_ground(
             if ground_z is not None and torch.isfinite(ground_z[env_ids]).all():
                 root_states[:, 2] = ground_z[env_ids] + z_rand
                 robot.write_root_state_to_sim(root_states, env_ids=env_ids)
+
+    if not hasattr(env, "_last_reset_step") or env._last_reset_step is None:
+        env._last_reset_step = torch.zeros(env.num_envs, device=env.device, dtype=torch.long)
+    env._last_reset_step[env_ids] = int(getattr(env, "common_step_counter", 0))
                 if hasattr(scanner, "update"):
                     scanner.update(dt=0.0, force_recompute=True)
         except Exception:
