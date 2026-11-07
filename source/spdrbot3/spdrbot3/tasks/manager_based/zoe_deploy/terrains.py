@@ -33,6 +33,7 @@ ZOE_TERRAINS_CFG = TerrainGeneratorCfg(
     horizontal_scale=0.1,
     vertical_scale=0.005,
     slope_threshold=0.75,
+    curriculum=True,
     use_cache=False,  # A20 fix
     sub_terrains={
         "flat": terrain_gen.HfRandomUniformTerrainCfg(
