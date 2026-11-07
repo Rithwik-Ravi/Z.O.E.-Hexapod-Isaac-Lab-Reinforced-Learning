@@ -4,6 +4,7 @@
 
 """Stage 2 Multi-Terrain Task Configuration for Z.O.E. Hexapod (Zoe-Hexapod-Terrain-v0)."""
 
+import isaaclab.sim as sim_utils
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
@@ -26,6 +27,12 @@ class ZoeTerrainSceneCfg(ZoeSceneCfg):
         terrain_generator=ZOE_TERRAINS_CFG,
         max_init_terrain_level=1,
         collision_group=-1,
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
+            static_friction=1.0,
+            dynamic_friction=1.0,
+        ),
         debug_vis=False,
     )
 
