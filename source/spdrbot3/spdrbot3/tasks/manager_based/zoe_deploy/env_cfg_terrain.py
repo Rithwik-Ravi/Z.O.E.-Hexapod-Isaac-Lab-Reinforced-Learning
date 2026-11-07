@@ -11,8 +11,9 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import RayCasterCfg, patterns
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
+import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 
-from .env_cfg_flat import ZoeHexapodFlatDeployEnvCfg, ZoeSceneCfg, RewardsCfg
+from .env_cfg_flat import ZoeHexapodFlatDeployEnvCfg, ZoeSceneCfg, RewardsCfg, CommandsCfg
 from .params import ZOE_PARAMS
 from .terrains import ZOE_TERRAINS_CFG
 from . import mdp as zoe_mdp
@@ -67,6 +68,24 @@ class ZoeTerrainRewardsCfg(RewardsCfg):
 
 
 @configclass
+class ZoeTerrainCommandsCfg(CommandsCfg):
+    """Consistent 20s episode traversal commands for multi-terrain curriculum."""
+    base_velocity = mdp.UniformVelocityCommandCfg(
+        asset_name="robot",
+        resampling_time_range=(20.0, 20.0),
+        rel_standing_envs=ZOE_PARAMS.commands.rel_standing_envs,
+        rel_heading_envs=ZOE_PARAMS.commands.rel_heading_envs,
+        heading_command=ZOE_PARAMS.commands.heading_command,
+        debug_vis=True,
+        ranges=mdp.UniformVelocityCommandCfg.Ranges(
+            lin_vel_x=(0.15, 0.25),
+            lin_vel_y=(-0.05, 0.05),
+            ang_vel_z=(-0.05, 0.05),
+        ),
+    )
+
+
+@configclass
 class CurriculumCfg:
     """Terrain curriculum configuration."""
     terrain_levels = CurrTerm(func=zoe_mdp.zoe_terrain_curriculum)
@@ -76,6 +95,7 @@ class CurriculumCfg:
 class ZoeHexapodTerrainEnvCfg(ZoeHexapodFlatDeployEnvCfg):
     """Stage 2 Multi-Terrain Environment Configuration."""
     scene: ZoeTerrainSceneCfg = ZoeTerrainSceneCfg(num_envs=1024, env_spacing=2.5)
+    commands: ZoeTerrainCommandsCfg = ZoeTerrainCommandsCfg()
     rewards: ZoeTerrainRewardsCfg = ZoeTerrainRewardsCfg()
     curriculum: CurriculumCfg = CurriculumCfg()
 
