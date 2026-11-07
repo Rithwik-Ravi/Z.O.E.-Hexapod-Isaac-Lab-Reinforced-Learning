@@ -47,6 +47,7 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, RslRlOnPolicyRunnerCfg
 from isaaclab.utils.assets import retrieve_file_path
 import spdrbot3.tasks
 from spdrbot3.tasks.manager_based.zoe_deploy.params import ZOE_PARAMS, get_foot_tip_offsets_tensor
+from spdrbot3.tasks.manager_based.zoe_deploy.mdp.rewards import height_above_ground
 
 GATE_MIN_HEIGHT = ZOE_PARAMS.GATE_MIN_HEIGHT
 TORQUE_SAT_THRESHOLD = ZOE_PARAMS.TORQUE_SAT_THRESHOLD_NM
@@ -148,7 +149,7 @@ def run_chunk_check():
             actions = policy(pol_obs)
 
             # Record metrics
-            base_height = robot.data.root_pos_w[:, 2]
+            base_height = height_above_ground(unwrapped)
             c1_height_pass += (base_height >= GATE_MIN_HEIGHT).sum().item()
 
             forces_z = contact_sensor.data.net_forces_w[:, foot_ids, 2]
@@ -228,7 +229,7 @@ def run_chunk_check():
             pol_obs = obs["policy"] if isinstance(obs, dict) else obs
             actions = policy(pol_obs)
 
-            base_height = robot.data.root_pos_w[:, 2]
+            base_height = height_above_ground(unwrapped)
             c2_height_pass += (base_height >= GATE_MIN_HEIGHT).sum().item()
 
             forces_z = contact_sensor.data.net_forces_w[:, foot_ids, 2]
@@ -354,7 +355,7 @@ def run_chunk_check():
             pol_obs = obs["policy"] if isinstance(obs, dict) else obs
             actions = policy(pol_obs)
 
-            base_height = robot.data.root_pos_w[:, 2]
+            base_height = height_above_ground(unwrapped)
             if 150 <= step < 250:
                 post_push1_height_pass += (base_height >= GATE_MIN_HEIGHT).sum().item()
             if 300 <= step < 400:

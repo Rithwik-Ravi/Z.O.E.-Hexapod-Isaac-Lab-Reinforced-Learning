@@ -7,6 +7,7 @@
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.sensors import RayCasterCfg, patterns
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
@@ -26,6 +27,15 @@ class ZoeTerrainSceneCfg(ZoeSceneCfg):
         max_init_terrain_level=None,
         collision_group=-1,
         debug_vis=False,
+    )
+
+    height_scanner = RayCasterCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/base_link",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+        attach_yaw_only=True,
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.15, size=[0.3, 0.3]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
     )
 
 

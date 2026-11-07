@@ -38,13 +38,12 @@ def base_lin_vel_privileged(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = 
     return robot.data.root_lin_vel_b.clone()
 
 
+from .rewards import height_above_ground
+
+
 def base_height_privileged(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = None) -> torch.Tensor:
-    """Privileged observation: Base height above ground [N, 1]."""
-    if asset_cfg is None and hasattr(SceneEntityCfg, "__call__"):
-        asset_cfg = SceneEntityCfg("robot")
-    name = getattr(asset_cfg, "name", "robot")
-    robot = env.scene[name]
-    return robot.data.root_pos_w[:, 2].unsqueeze(1)
+    """Privileged observation: Base height above local ground [N, 1]."""
+    return height_above_ground(env, asset_cfg=asset_cfg).unsqueeze(1)
 
 
 def belly_contact_flag(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
