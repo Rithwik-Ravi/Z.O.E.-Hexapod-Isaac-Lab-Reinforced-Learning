@@ -24,7 +24,7 @@ class ZoeTerrainSceneCfg(ZoeSceneCfg):
         prim_path="/World/ground",
         terrain_type="generator",
         terrain_generator=ZOE_TERRAINS_CFG,
-        max_init_terrain_level=None,
+        max_init_terrain_level=1,
         collision_group=-1,
         debug_vis=False,
     )

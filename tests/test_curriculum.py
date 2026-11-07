@@ -204,3 +204,30 @@ def test_zoe_terrain_curriculum_far_from_world_origin_clamping_and_logging():
     assert log["Terrain/slope_up/promotion_rate"] == 1.0
     assert log["Terrain/stairs_up/promotion_rate"] == 0.0
     assert log["Terrain/stairs_up/demotion_rate"] == 0.0
+
+
+def test_max_init_terrain_level_not_none():
+    """A4 unit test: fail if max_init_terrain_level is None in ZoeTerrainSceneCfg."""
+    import ast
+    import os
+
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    cfg_path = os.path.join(
+        repo_root, "source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/env_cfg_terrain.py"
+    )
+    with open(cfg_path, "r") as f:
+        source = f.read()
+
+    tree = ast.parse(source)
+    found_kw = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.keyword) and node.arg == "max_init_terrain_level":
+            found_kw = True
+            assert not (isinstance(node.value, ast.Constant) and node.value.value is None), (
+                "max_init_terrain_level in ZoeTerrainSceneCfg must NOT be None!"
+            )
+            assert isinstance(node.value, ast.Constant) and node.value.value == 1, (
+                f"Expected max_init_terrain_level == 1, got {ast.dump(node.value)}"
+            )
+    assert found_kw, "max_init_terrain_level keyword not found in env_cfg_terrain.py"
+
