@@ -14,6 +14,7 @@ except Exception:
 
 
 from ..params import ZOE_PARAMS
+from .rewards import _get_scene_entity, ground_height_from_raycaster
 
 
 def reset_root_near_ground(
@@ -51,6 +52,20 @@ def reset_root_near_ground(
     root_states[:, 9] = torch.FloatTensor(num_resets).uniform_(*velocity_range.get("z", (0.0, 0.0))).to(env.device)
 
     robot.write_root_state_to_sim(root_states, env_ids=env_ids)
+
+    scanner = _get_scene_entity(env.scene, "height_scanner")
+    if scanner is not None:
+        try:
+            if hasattr(scanner, "update"):
+                scanner.update(dt=0.0, force_recompute=True)
+            ground_z = ground_height_from_raycaster(env, sensor_name="height_scanner")
+            if ground_z is not None and torch.isfinite(ground_z[env_ids]).all():
+                root_states[:, 2] = ground_z[env_ids] + z_rand
+                robot.write_root_state_to_sim(root_states, env_ids=env_ids)
+                if hasattr(scanner, "update"):
+                    scanner.update(dt=0.0, force_recompute=True)
+        except Exception:
+            pass
 
 
 def push_robot_base(
