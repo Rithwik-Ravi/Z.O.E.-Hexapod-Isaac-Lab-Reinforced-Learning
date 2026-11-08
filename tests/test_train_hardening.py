@@ -174,3 +174,4 @@ def test_early_abort_watchdog_conditions():
         learning_rate=5e-6,
     )
     assert warn is not None and "collapsed below 1e-5" in warn
+

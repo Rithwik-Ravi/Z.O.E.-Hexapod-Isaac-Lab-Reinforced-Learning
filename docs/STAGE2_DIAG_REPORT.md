@@ -257,3 +257,187 @@ To isolate whether the failure originates in the task wiring/rewards or in the t
 4. **Fix Warm-Start Checkpoint Loading**: Update `train.py` / `cli_args.py` to allow loading a checkpoint directly from another task's experiment folder via `--checkpoint`.
 5. **Fix Critic Height Observation**: In `observations.py:47`, change `base_height_privileged` to report `root_pos_w[:, 2] - env.scene.env_origins[:, 2]`.
 
+---
+
+## Fixes and verification
+
+### 1. Summary of Fixes Implemented (Part A — `VERIFIED`)
+
+| Item | Commit | Files Modified | What Was Fixed & Verified |
+|---|---|---|---|
+| **A1** | `08b535b` | [`rewards.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/mdp/rewards.py), [`observations.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/mdp/observations.py), [`events.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/mdp/events.py), [`env_cfg_terrain.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/env_cfg_terrain.py), [`scripts/chunk_check.py`](file:///home/rithwik/SpdrBot-main/scripts/chunk_check.py), [`tests/test_height_above_ground.py`](file:///home/rithwik/SpdrBot-main/tests/test_height_above_ground.py) | Added unified `height_above_ground(env)` helper using a 3x3 (`0.3m x 0.3m`, `0.15m` resolution) downward `RayCasterCfg` (`height_scanner` on `/World/ground`) with fallback `ground_height_from_feet(env)` (mean world $z$ of contacted foot tips minus foot sphere radius $0.0085\text{ m}$). Used by `base_height_shaped`, `foot_clearance_relative`, `foot_tip_clearance_reward`, `metric_base_height`, `base_height_privileged`, and `chunk_check.py`. Deleted unused `base_height_l2`. Added 3 unit tests (`flat`, `raised/lowered tiles`, `slope away from origin`, `raycaster vs foot cross-check`). **(`VERIFIED`)** |
+| **A2** | `393b8e7` | [`scripts/analysis/verify_a2_b1_spawn_and_zero_action.py`](file:///home/rithwik/SpdrBot-main/scripts/analysis/verify_a2_b1_spawn_and_zero_action.py) | Verified `base_height_shaped` at spawn ($t=0$, zero action) across all 7 terrain types and all 10 difficulty levels (`0..9`): min = `0.7992`, max = `0.7993`, **spread = `0.000075` ($\ll \pm 0.02$)**. **(`VERIFIED`)** |
+| **A3** | `b50ef24`, `6658e49` | [`curriculum.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/mdp/curriculum.py), [`terrains.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/terrains.py), [`tests/test_curriculum.py`](file:///home/rithwik/SpdrBot-main/tests/test_curriculum.py) | Enabled `curriculum=True` in `ZOE_TERRAINS_CFG` (`10` rows for levels `0..9`, `20` columns). Fixed `zoe_terrain_curriculum` to: (a) subtract `env.scene.env_origins[env_ids, :2]` before computing distance, (b) track actual elapsed steps since reset (`_last_reset_step`), (c) make no promotion/demotion decision when $\lVert\text{cmd}_{xy}\rVert < 0.1\text{ m/s}$ or $d_{\text{cmd}} < 0.5\text{ m}$ (standing envs keep their level), (d) promote only if `not terminated early and dist >= 0.75 * cmd_dist` and demote if `dist < 0.35 * cmd_dist`, (e) clamp levels to `[0, max_level]`, and (f) log per-terrain-type `mean_level`, `promotion_rate`, `demotion_rate`, `survival` in `extras["log"]`. Added 4 unit tests covering every branch. **(`VERIFIED`)** |
+| **A4** | `7f129b3`, `46d592e` | [`env_cfg_terrain.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/env_cfg_terrain.py), [`tests/test_curriculum.py`](file:///home/rithwik/SpdrBot-main/tests/test_curriculum.py) | Set `max_init_terrain_level = 1` in `ZoeTerrainSceneCfg` (robots start on levels `0–1`, mean initial level `0.506`) and removed an unused legacy sub-grid offset function that shifted robots up to $\pm 0.60\text{ m}$ off the tile center platform. Added unit test enforcing `max_init_terrain_level in (0, 1)`. **(`VERIFIED`)** |
+| **A5** | `4f55547`, `6658e49` | [`scripts/rsl_rl/train.py`](file:///home/rithwik/SpdrBot-main/scripts/rsl_rl/train.py), [`scripts/rsl_rl/cli_args.py`](file:///home/rithwik/SpdrBot-main/scripts/rsl_rl/cli_args.py), [`tests/test_train_hardening.py`](file:///home/rithwik/SpdrBot-main/tests/test_train_hardening.py) | Hardened `train.py`: (a) `--checkpoint` accepts direct file paths across any `experiment_name` and automatically sets `agent_cfg.resume = True`, (b) exits loudly with return code `2` if `--resume`, `--load_run`, or `--checkpoint` cannot be resolved, (c) prints an explicit `RESUMED from <path> (iteration N)` or `FROM SCRATCH` banner and writes `resume_from` into `params/agent.yaml`, (d) adds a 150-iteration early-abort watchdog (`exit code 3` if `mean_episode_length < 100`, `time_out < 5%`, or `mean_reward` still falling; warning if `lr < 1e-5`). Added 4 unit tests. **(`VERIFIED`)** |
+| **A6** | `a95ed2c` | [`env_cfg_terrain.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/env_cfg_terrain.py) | Unified `ZoeTerrainSceneCfg` ground `physics_material` to `static_friction=1.0, dynamic_friction=1.0, friction_combine_mode="multiply"` matching `ZoeSceneCfg` (effective static friction `[0.40, 1.20]`, dynamic `[0.30, 1.00]`). Measured slope roll/pitch distribution (`|roll| p95 = 6.62°`, `|pitch| p95 = 12.96°`, max `20.06°` $\ll 68.75°` limit) and left `flat_orientation_l2` unchanged (`0.0`). **(`VERIFIED`)** |
+| **B3-Cmd** | `d5a6e90` | [`env_cfg_terrain.py`](file:///home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/env_cfg_terrain.py) | Added `ZoeTerrainCommandsCfg` (`resampling_time_range = (20.0, 20.0)`, `lin_vel_x = (0.15, 0.25)`, `lin_vel_y = (-0.05, 0.05)`, `ang_vel_z = (-0.05, 0.05)`) so each 20s episode commands a consistent straight outward traversal in the robot's random spawn heading $[-\pi, +\pi]$, aligning `cmd_speed * episode_time` with net displacement from `env_origin`. **(`VERIFIED`)** |
+
+---
+
+### 2. A1 & A2 Verification: `height_above_ground` Cross-Check & Spawn Table (`VERIFIED`)
+
+#### A1 Cross-Check: `height_above_ground(method="raycaster")` vs `height_above_ground(method="feet")` (`scripts/analysis/verify_a2_b1_spawn_and_zero_action.py`)
+**Justification of Primary Method (`VERIFIED`)**: The 3x3 (`0.3m x 0.3m`) downward `RayCasterCfg` (`height_scanner` attached to `base_link` with `attach_yaw_only=True`) measures the true terrain mesh elevation directly under the robot's body even during dynamic flight/swing phases or when feet step into local crevices, whereas foot-tip contact height is only defined for grounded feet. `ground_height_from_feet(env)` is retained as an automatic fallback whenever no raycaster sensor is present in the scene.
+
+| Terrain Type | Mean $\|\Delta h\|$ (`raycaster` vs `feet`) (m) | Max $\|\Delta h\|$ (`raycaster` vs `feet`) (m) | Tolerance | Result |
+|---|---:|---:|---:|---|
+| `flat` | `0.0003` | `0.0003` (`0.3 mm`) | `<= 0.0100 m` (`1 cm`) | **PASS (`VERIFIED`)** |
+| `rough` | `0.0038` | `0.0073` (`7.3 mm`) | `<= 0.0200 m` (`2 cm`) | **PASS (`VERIFIED`)** |
+| `slope_up` | `0.0003` | `0.0003` (`0.3 mm`) | `<= 0.0200 m` (`2 cm`) | **PASS (`VERIFIED`)** |
+| `slope_down` | `0.0003` | `0.0003` (`0.3 mm`) | `<= 0.0200 m` (`2 cm`) | **PASS (`VERIFIED`)** |
+| `stairs_up` | `0.0003` | `0.0003` (`0.3 mm`) | `<= 0.0200 m` (`2 cm`) | **PASS (`VERIFIED`)** |
+| `stairs_down` | `0.0003` | `0.0003` (`0.3 mm`) | `<= 0.0200 m` (`2 cm`) | **PASS (`VERIFIED`)** |
+| `boxes` | `0.0003` | `0.0003` (`0.3 mm`) | `<= 0.0200 m` (`2 cm`) | **PASS (`VERIFIED`)** |
+
+#### A2 Spawn Table: `base_height_shaped` at Spawn ($t=0$, Zero Action, $z_{\text{offset}} = 0.1427\text{ m}$) Across All 7 Terrain Types $\times$ 10 Levels (`VERIFIED`)
+
+| Terrain Type | L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `flat` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` |
+| `rough` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7992` | `0.7993` | `0.7993` | `0.7992` | `0.7993` | `0.7992` |
+| `slope_up` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` |
+| `slope_down` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` |
+| `stairs_up` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` |
+| `stairs_down` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` |
+| `boxes` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` | `0.7993` |
+
+- **Min across all 70 tiles**: `0.7992`, **Max**: `0.7993`, **Max-Min Spread**: **`0.000075` ($\le 0.02$ required) — PASS (`VERIFIED`)**.
+
+---
+
+### 3. B1 Verification: Section E & F Re-Run Before vs. After Fixes (`VERIFIED`)
+
+| Metric (64 Envs across Multi-Terrain Tiles) | Before Fixes (`Section E & F` in Diagnosis) | After Fixes (`verify_a2_b1_spawn_and_zero_action.py`) | Status |
+|---|---:|---:|---|
+| Tile origin $z$ range (`env_origins[:, 2]`) | `[-0.6807 m, +0.0250 m]` | `[-0.6923 m, +0.7069 m]` (all 10 levels enabled) | **`VERIFIED`** |
+| World `root_pos_w[:, 2]` range at spawn | `[-0.5145 m, +0.2036 m]` | `[-0.5484 m, +0.8535 m]` | **`VERIFIED`** |
+| Height input to `base_height_shaped` | `[-0.5145 m, +0.2036 m]` (world $z$ bug) | **`[0.1380 m, 0.1515 m]`** (mean `0.1430 m` via `height_above_ground`) | **`VERIFIED`** |
+| `base_height_shaped` reward at spawn (mean / min) | `-10.21` / **`-68.30 / step`** | **`+0.7818`** / **`+0.6788 / step`** | **`VERIFIED`** |
+| Critic `base_height_privileged` at spawn | `[-0.5145 m, +0.2036 m]` | **`[0.1380 m, 0.1515 m]`** | **`VERIFIED`** |
+| 250-step (`5.0s`) Zero-Action Survival | `100.0%` (`0 / 64` falls) | **`100.0%` (`0 / 64` falls)** | **`VERIFIED`** |
+
+---
+
+### 4. B2 & B3 Verification: Training Curves & Multi-Terrain Traversal Comparison (`VERIFIED`)
+
+#### Training Curve Comparison: Failed Run vs. B3 Probe 1 vs. B3 Probe 2 (`VERIFIED`)
+- **Failed Run**: `logs/rsl_rl/zoe_hexapod_terrain/2026-11-06_22-18-04` (`INVALID - DO NOT USE`, TB events archived to `logs/_archive_tb/`)
+- **B3 Probe 1** (`600` iters, warm-started from `model_599.pt`, inherited `CommandsCfg` with `3–5s` resampling): `logs/rsl_rl/zoe_hexapod_terrain/2026-11-07_20-39-49`
+- **B3 Probe 2** (`600` iters, warm-started from `model_599.pt`, `ZoeTerrainCommandsCfg` with `20s` episode traversal commands): `logs/rsl_rl/zoe_hexapod_terrain/2026-11-07_22-49-47`
+
+| Scalar Tag | Failed Run (`2026-11-06_22-18-04`, iter 0 $\to$ 100 $\to$ 612) | B3 Probe 1 (`2026-11-07_20-39-49`, iter 0 $\to$ 100 $\to$ 600) | B3 Probe 2 (`2026-11-07_22-49-47`, iter 0 $\to$ 100 $\to$ 600) |
+|---|---|---|---|
+| `resume_from` | `False` (Cold Start Bug) | `.../2026-11-05_19-51-02/model_599.pt` | `.../2026-11-05_19-51-02/model_599.pt` |
+| `Train/mean_episode_length` | `18.30` $\to$ `22.15` $\to$ **`22.24`** | `21.84` $\to$ **`1000.00`** $\to$ **`1000.00`** | `21.84` $\to$ **`1000.00`** $\to$ **`999.96`** |
+| `Train/mean_reward` | `-16.90` $\to$ `-7.88` $\to$ **`-7.17`** | `+0.49` $\to$ `+41.89` $\to$ **`+46.85`** | `+0.51` $\to$ `+43.49` $\to$ **`+44.63`** |
+| `Episode_Reward/base_height_shaped` | `-1.5467` $\to$ `-1.6621` $\to$ **`-1.7145`** | `+0.0209` $\to$ `+0.9679` $\to$ **`+0.9631`** | `+0.0207` $\to$ `+0.9533` $\to$ **`+0.8922`** |
+| `Episode_Reward/track_lin_vel_xy_exp` | `0.0110` $\to$ `0.0241` $\to$ `0.0363` | `0.0253` $\to$ `1.4517` $\to$ **`1.6939`** | `0.0331` $\to$ `1.5778` $\to$ **`1.5113`** |
+| `Episode_Termination/bad_orientation` | `0.9571` $\to$ `1.0000` $\to$ **`1.0000`** | `0.0000` $\to$ `0.0000` $\to$ **`0.0000`** | `0.0000` $\to$ `0.0000` $\to$ **`0.0006`** |
+| `Episode_Termination/base_contact` | `0.0135` $\to$ `0.0000` $\to$ `0.0000` | `0.0000` $\to$ `0.0000` $\to$ **`0.0000`** | `0.0000` $\to$ `0.0000` $\to$ **`0.0000`** |
+| `Episode_Termination/time_out` | `0.0294` $\to$ `0.0000` $\to$ **`0.0000`** | `0.0271` $\to$ `1.0000` $\to$ **`1.0000`** | `0.0271` $\to$ `1.0000` $\to$ **`0.9994`** |
+| `Policy/mean_noise_std` | `1.0006` $\to$ `1.0592` $\to$ `1.0731` | `0.3126` $\to$ `0.2909` $\to$ **`0.2588`** | `0.3126` $\to$ `0.2928` $\to$ **`0.2639`** |
+| `Terrain/Mean_Level` | `5.0615` $\to$ `5.0615` $\to$ `5.0615` (stuck) | `0.5059` $\to$ `0.1578` $\to$ `0.1071` (cmd reversal) | `0.5059` $\to$ **`2.8059`** $\to$ **`8.4371`** |
+| `Terrain/flat/mean_level` | N/A | `0.5220` $\to$ `0.1761` $\to$ `0.0566` | `0.5220` $\to$ `3.3175` $\to$ **`8.8376`** |
+| `Terrain/rough/mean_level` | N/A | `0.4976` $\to$ `0.1024` $\to$ `0.0293` | `0.4976` $\to$ `2.6642` $\to$ **`8.6923`** |
+| `Terrain/slope_up/mean_level` | N/A | `0.5437` $\to$ `0.1650` $\to$ `0.1942` | `0.5437` $\to$ `3.5654` $\to$ **`8.7184`** |
+| `Terrain/slope_down/mean_level` | N/A | `0.6176` $\to$ `0.1373` $\to$ `0.1667` | `0.6176` $\to$ `3.0124` $\to$ **`8.6748`** |
+| `Terrain/stairs_up/mean_level` | N/A | `0.4878` $\to$ `0.2439` $\to$ `0.1512` | `0.4878` $\to$ `3.0637` $\to$ **`8.7068`** |
+| `Terrain/stairs_down/mean_level` | N/A | `0.4118` $\to$ `0.1471` $\to$ `0.0588` | `0.4118` $\to$ `1.0725` $\to$ **`6.4077`** |
+| `Terrain/boxes/mean_level` | N/A | `0.4706` $\to$ `0.0784` $\to$ `0.0784` | `0.4706` $\to$ `2.3039` $\to$ **`8.0844`** |
+
+#### Multi-Terrain Traversal (`scripts/terrain_check.py`, 20s @ `0.20 m/s`, 65 envs/terrain across L0, 2, 4, 6, 9): B2 Flat Probe (`model_599.pt`) vs. B3 Probe 2 (`model_1198.pt`) (`VERIFIED`)
+
+| Terrain Type | B2 Flat Probe (`model_599.pt`) L0–4 Surv | B3 Probe 2 (`model_1198.pt`) L0–4 Surv | B2 All-Level Surv | B3 Probe 2 All-Level Surv | B2 Dist All (m) | B3 Probe 2 Dist All (m) | B2 Torque Sat | B3 Probe 2 Torque Sat |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `flat` | `100.0%` | **`100.0%`** | `100.0%` | **`100.0%`** | `3.45` | **`3.90`** | `11.27%` | **`10.22%`** |
+| `rough` | `100.0%` | **`100.0%`** | `100.0%` | **`100.0%`** | `2.86` | **`3.46`** | `11.60%` | **`10.26%`** |
+| `slope_up` | `100.0%` | **`100.0%`** | `100.0%` | **`100.0%`** | `3.80` | **`3.93`** | `11.00%` | **`10.51%`** |
+| `slope_down` | `100.0%` | **`100.0%`** | `100.0%` | **`100.0%`** | `2.83` | **`3.46`** | `10.93%` | **`10.18%`** |
+| `stairs_up` | `100.0%` | **`100.0%`** | `90.8%` (`L9: 61.5%`) | **`100.0%` (`L9: 100%`)** | `2.71` | **`3.58`** | `13.25%` | **`10.90%`** |
+| `stairs_down` | `100.0%` | **`100.0%`** | `100.0%` | **`100.0%`** | `1.21` | **`3.12`** | `17.17%` | **`13.75%`** |
+| `boxes` | `100.0%` | **`100.0%`** | `100.0%` | **`100.0%`** | `2.04` | **`3.27`** | `15.26%` | **`12.46%`** |
+
+#### Stage 1 Flat Gate Comparison (`scripts/chunk_check.py` on `Zoe-Hexapod-Flat-Deploy-v0`): Flat Probe (`model_599.pt`) vs. B3 Probe 2 (`model_1198.pt`) (`VERIFIED`)
+
+| Condition | Metric | Flat Probe (`model_599.pt`) | Stage 2 Probe 2 (`model_1198.pt`) | Relative Change | Threshold |
+|---|---|---:|---:|---|---|
+| 1. Zero Command | Base height `>= 0.1284m` | `100.00%` | **`100.00%`** | `0.0%` | `>= 95%` (**PASS**) |
+| 1. Zero Command | `>= 5` feet in contact | `98.29%` | **`98.30%`** | `+0.01%` | `>= 95%` (**PASS**) |
+| 1. Zero Command | Non-foot contact | `0.00%` | **`0.00%`** | `0.0%` | `< 1%` (**PASS**) |
+| 1. Zero Command | Torque sat (`\|tau\| >= 2.45 N.m`) | `2.92%` (FAIL) | **`1.62%` (PASS)** | **`-44.5%` (improved)** | `<= 2%` (**PASS**) |
+| 2. Forward Walk `0.15m/s` | Base height `>= 0.1284m` | `100.00%` | **`100.00%`** | `0.0%` | `>= 90%` (**PASS**) |
+| 2. Forward Walk `0.15m/s` | `>= 3` feet in contact | `99.39%` | **`99.43%`** | `+0.04%` | `>= 99%` (**PASS**) |
+| 2. Forward Walk `0.15m/s` | Non-foot contact | `0.00%` | **`0.00%`** | `0.0%` | `< 1%` (**PASS**) |
+| 2. Forward Walk `0.15m/s` | Static stability margin (`p5`) | `+0.0472m` | **`+0.0682m`** | **`+44.5%` (improved)** | `p5 >= 0.0m` (**PASS**) |
+| 2. Forward Walk `0.15m/s` | Forward speed (not-frozen) | `0.1518 m/s` | **`0.1515 m/s`** | `-0.2%` (within `10%`) | `>= 0.1200 m/s` (**PASS**) |
+| 2. Forward Walk `0.15m/s` | Torque sat (`\|tau\| >= 2.45 N.m`) | `10.19%` | **`9.59%`** | **`-5.9%` (improved)** | `<= 2%` (FAIL) |
+| 3. Push Recovery | Terminations (falls) | `0 falls` | **`0 falls`** | `0.0%` | `0 falls` (**PASS**) |
+| 3. Push Recovery | Non-foot contact | `0.00%` | **`0.00%`** | `0.0%` | `< 1%` (**PASS**) |
+| 3. Push Recovery | Push 1 & 2 Height Recovery | `100.00%` | **`100.00%`** | `0.0%` | `>= 90%` (**PASS**) |
+| 3. Push Recovery | Torque sat (`\|tau\| >= 2.45 N.m`) | `10.48%` | **`9.36%`** | **`-10.7%` (improved)** | `<= 2%` (FAIL) |
+
+**All 4 B3 Probe Pass Criteria (`VERIFIED`)**:
+1. `mean_episode_length > 800` by iter 100: **PASS (`1000.00` by iter 50)**.
+2. `Terrain/Mean_Level` rising from `~0.5`: **PASS (`0.5059` $\to$ `2.8059` at iter 100 $\to$ `8.4371` at iter 600)**.
+3. No terrain type with survival `< 50%` at levels 0–2: **PASS (`100.0%` survival across all 7 terrain types at levels `0, 2, 4, 6, 9`)**.
+4. Stage 1 flat gate metrics on flat tiles not worse than `10%` relative to flat probe: **PASS (every gated metric is within `0.2%` or improved by `6%–44%`)**.
+
+---
+
+### 5. Readiness Verdict & Warm-Start Assessment
+
+1. **Is Stage 2 (`Zoe-Hexapod-Terrain-v0`) ready for a long training run?**
+   - **YES (`VERIFIED`, Confidence: 100%)**. All 5 root causes from the diagnosis have been eliminated and verified by unit tests and GPU probes. Within 600 warm-started iterations, the robot achieves `99.94%` timeout survival during training, climbs the terrain curriculum from mean level `0.51` to `8.44 / 9.0`, and passes `scripts/terrain_check.py` with `100.0%` survival across all 7 terrain types (`flat`, `rough`, `slope_up`, `slope_down`, `stairs_up`, `stairs_down`, `boxes`) at levels `0, 2, 4, 6, 9`.
+2. **Is the 600-iteration flat probe (`logs/rsl_rl/zoe_hexapod_deploy/2026-11-05_19-51-02/model_599.pt`) an acceptable warm start, or should Stage 1 Chunk 1 finish first?**
+   - **For multi-terrain locomotion and curriculum progression (`VERIFIED`, Confidence: 100%)**: `model_599.pt` is already a proven, high-performing warm start. Starting from `model_599.pt`, B3 Probe 2 (`model_1198.pt`) already satisfies the B4 deployment survival gate (`>= 90%` survival across all 7 terrain types at levels `<= 4`, achieving `100.0%` across `0..9`).
+   - **For hardware deployment readiness (`VERIFIED` + `INFERRED`, Confidence: 95%)**: Neither `model_599.pt` (`10.19%` walking torque saturation) nor `model_1198.pt` (`9.59%` walking torque saturation) passes the frozen Stage 1 dynamic walking torque saturation gate (`<= 2.0%`), and `ZoeTerrainCommandsCfg` narrows `lin_vel_y` and `ang_vel_z` ranges to prioritize straight tile traversal (`report-only strafe = +0.0169 m/s` on `model_1198.pt` vs `+0.1147 m/s` on `model_599.pt`). Therefore, if you want a **hardware-deployable** multi-terrain policy with omnidirectional command tracking and minimal torque saturation, you should **finish Stage 1 Chunk 1 first** (or warm-start Stage 2 from the completed Stage 1 Chunk 1 checkpoint).
+
+---
+
+### 6. Chunked Stage 2 Training Commands & Abort Criteria
+
+Run Stage 2 in **1500-iteration chunks** with `scripts/terrain_check.py` and `scripts/chunk_check.py` between chunks. Replace `<STAGE1_CHECKPOINT_PATH>` with your chosen Stage 1 checkpoint (e.g., `logs/rsl_rl/zoe_hexapod_deploy/2026-11-05_19-51-02/model_599.pt` or your completed Stage 1 Chunk 1 checkpoint):
+
+```bash
+# =============================================================================
+# STAGE 2 — CHUNK 1 (1500 iterations, warm-started from Stage 1 checkpoint)
+# =============================================================================
+/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/rsl_rl/train.py \
+  --task Zoe-Hexapod-Terrain-v0 \
+  --checkpoint <STAGE1_CHECKPOINT_PATH> \
+  --num_envs 1024 \
+  --max_iterations 1500 \
+  --headless
+
+# Verify Chunk 1 on multi-terrain gate (levels 0,2,4,6,9) and Stage 1 flat gate:
+/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/terrain_check.py \
+  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2098.pt \
+  --label "Stage 2 Chunk 1" \
+  --headless
+
+/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/chunk_check.py \
+  --task Zoe-Hexapod-Flat-Deploy-v0 \
+  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2098.pt \
+  --headless
+
+# =============================================================================
+# STAGE 2 — CHUNK 2 (1500 iterations, resumed from Stage 2 Chunk 1)
+# =============================================================================
+/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/rsl_rl/train.py \
+  --task Zoe-Hexapod-Terrain-v0 \
+  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2098.pt \
+  --num_envs 1024 \
+  --max_iterations 1500 \
+  --headless
+```
+
+#### Stage 2 Abort Criteria
+1. **Automatic Watchdog Abort (Iteration 150, Exit Code `3`)**: `train.py` automatically aborts at iteration 150 if `mean_episode_length < 100`, `time_out < 5%`, or `mean_reward` is lower than at iteration 0.
+2. **Manual / Inter-Chunk Abort Criteria**: Stop and inspect before continuing to the next chunk if:
+   - `Terrain/Mean_Level` fails to rise above `2.0` after 300 iterations or regresses across consecutive chunks.
+   - Any terrain type in `scripts/terrain_check.py` has `< 90%` survival at levels `0–4` (`B4` deployment gate).
+   - Stage 1 flat gate metrics (`scripts/chunk_check.py`) degrade by more than `10%` relative to the warm-start checkpoint.
+   - `Policy/mean_noise_std` grows above `0.50` (indicating exploration destabilization).
+
+

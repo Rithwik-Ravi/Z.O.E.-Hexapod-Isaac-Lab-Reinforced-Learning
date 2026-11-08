@@ -186,18 +186,20 @@ ESP32 #2 (IMU) -> "ROLL:..,PITCH:..,..\n" -> lidar_esp.py -> /imu/data (no gyro)
   - `scripts/fit_actuator_sim.py` (M1 Actuator step-response calibration script)
   - `scripts/rsl_rl/export.py` (M4 Policy exporter script with stance gate and `NOT_FOR_HARDWARE_UNCALIBRATED` contract)
   - `scripts/eval_robustness.py` (M5 Policy robustness evaluation script)
-  - `tests/test_params.py`, `tests/test_curriculum.py`, `tests/test_export.py` (14 unit tests including YAML duplicate-key check, derived constants, and 3D foot tip transforms)
+  - `tests/test_params.py`, `tests/test_curriculum.py`, `tests/test_export.py`, `tests/test_actions.py`, `tests/test_height_above_ground.py`, `tests/test_train_hardening.py` (23 unit tests including YAML duplicate-key check, derived constants, 3D foot tip transforms, `height_above_ground` raycaster & foot fallback, `zoe_terrain_curriculum` branches, and `train.py` hardening)
   - `deploy/actuator_model.yaml` & `deploy/asset_report.json` (Deduplicated contract metadata and audited asset report)
   - `deploy/mass_properties.yaml` (Deduplicated mass reference and native CAD breakdown)
   - `scripts/chunk_check.py` (3-condition parallel gate verification suite with report-only yaw and strafe tracking)
+  - `scripts/terrain_check.py` (Stage 2 multi-terrain traversal evaluation across all 7 terrain types and levels `0, 2, 4, 6, 9`)
   - `scripts/eval_gait_report.py` (Single-env 10s gait analysis & tripod alternation verification with 3D foot tip kinematics)
   - `scripts/verify_reward_budgets.py` (Analytical reward budget verifier)
-  - `scripts/analysis/*` (One-off diagnostic and sweep scripts: `sweep_default_pose.py`, `apply_5kg_mass_model.py`, `eval_honest_gate.py`, `diagnose_stance.py`, `diagnose_offline.py`, `inspect_stance_geometry.py`, `run_clean_stance_comparison.py`, `run_kp_grid_search.py`, `run_pose_grid_search.py`, `stance_gate.py`)
-  - `docs/CHUNK_LOG.md` (Gate execution log for all chunk checks)
+  - `scripts/analysis/*` (One-off diagnostic and sweep scripts: `sweep_default_pose.py`, `apply_5kg_mass_model.py`, `eval_honest_gate.py`, `diagnose_stance.py`, `diagnose_offline.py`, `inspect_stance_geometry.py`, `run_clean_stance_comparison.py`, `run_kp_grid_search.py`, `run_pose_grid_search.py`, `stance_gate.py`, `verify_a2_b1_spawn_and_zero_action.py`, `diag_*.py`)
+  - `docs/CHUNK_LOG.md` (Gate execution log for all chunk and terrain checks)
   - `docs/TRAINING_RECIPE.md` (Reproduction guide)
   - `docs/AUDIT_A_REPORT.md` (Read-only technical audit report)
   - `docs/DIAG_STANCE_REPORT.md` (Phase 1 stance diagnosis report)
   - `docs/STAGE1_READINESS_REPORT.md` (Stage 1 readiness, stance geometry, honest gate, and probe evaluation report)
+  - `docs/STAGE2_DIAG_REPORT.md` (Stage 2 failure diagnosis, fixes, and verification report)
   - `docs/CLEANUP_PLAN.md` (Two-stage cleanup inventory and plan)
 
 ### 6.2 Current Replacement Robot (`hexa_ir`, 2026-11-05)
@@ -234,5 +236,10 @@ ESP32 #2 (IMU) -> "ROLL:..,PITCH:..,..\n" -> lidar_esp.py -> /imu/data (no gyro)
   2. Derived model constants in `params.py` directly from `deploy/asset_report.json` and `deploy/actuator_model.yaml`, keeping gate ratios frozen (`0.90 -> 0.1284 m`, `0.95 -> 0.1356 m`). Fixed `contact_sensor.body_names` vs `robot.body_names` index mapping in `rewards.py`, `chunk_check.py`, `eval_gait_report.py`, and `sweep_default_pose.py`. Added `torque_limit_penalty`, `fewer_than_4_feet_contact`, and $\pm 10\%$ mass randomization.
   3. Recorded authoritative owner facts in `docs/ASSUMPTIONS.md` and deduplicated `deploy/actuator_model.yaml` and `deploy/mass_properties.yaml` (enforced by unit test `test_no_duplicate_yaml_keys`).
   4. Re-validated: 14/14 unit tests pass, reward budgets verified (`+181.17 /s` walking vs `+81.50 /s` standing), 4/5/6 kg stance & torque sweep completed, 50-iter smoke test passed, and 600-iter probe (`2026-11-05_19-51-02`) achieved **12/15 gate metrics PASS** including **static stability `p5 = +0.0472 m` (PASS)**, forward speed `0.1518 m/s` (PASS), `0 falls` (PASS), tripod correlation `r = -0.8551`, and reduced torque saturation (`2.92% / 10.19% / 10.48%`). Verified `NOT_FOR_HARDWARE_UNCALIBRATED` software export.
+- **2026-11-07**: Stage 2 (`Zoe-Hexapod-Terrain-v0`) Diagnosis, Fixes, & Short-Probe Verification:
+  1. Diagnosed the 5 root causes of the Stage 2 multi-terrain failure (`2026-11-06_22-18-04`, marked `INVALID - DO NOT USE` and archived to `logs/_archive_tb/`) in `docs/STAGE2_DIAG_REPORT.md`.
+  2. Implemented A1–A6 fixes: added `height_above_ground(env)` (3x3 downward `RayCasterCfg` `height_scanner` with foot-tip contact fallback `ground_height_from_feet`), fixed `zoe_terrain_curriculum` (`curriculum=True`, local xy distance from `env_origins`, standing-env guard, `[0, max_level]` clamping, per-terrain TensorBoard metrics), set `max_init_terrain_level = 1` with tile-center spawn, hardened `scripts/rsl_rl/train.py` (cross-task `--checkpoint`, loud exit code `2` on missing checkpoint, `RESUMED` / `FROM SCRATCH` banner, 150-iteration watchdog), unified terrain friction (`1.0, multiply`), and added `ZoeTerrainCommandsCfg` (`20s` consistent episode traversal commands).
+  3. Verified all 23 unit tests pass (`pytest`), verified spawn `base_height_shaped` spread across all 70 terrain tiles is `0.000075 <= 0.02`, created `scripts/terrain_check.py`, and ran warm-started 600-iteration Stage 2 Probe 2 (`logs/rsl_rl/zoe_hexapod_terrain/2026-11-07_22-49-47/model_1198.pt`), achieving `99.94%` training timeout survival, `Terrain/Mean_Level = 8.44 / 9.0`, **`100.0%` traversal survival across all 7 terrain types and levels `0, 2, 4, 6, 9`**, and **13/15 Stage 1 flat gate metrics PASS** (including zero-command torque saturation `1.62% <= 2.0%` PASS).
+
 
 

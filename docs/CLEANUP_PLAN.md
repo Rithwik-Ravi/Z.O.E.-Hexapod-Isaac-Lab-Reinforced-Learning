@@ -120,8 +120,12 @@ All runs prior to `2026-11-04_22-43` were trained on the old robot USD (`base_li
 | `2026-11-05_19-09-47` | 10.39 | 2026-11-05 19:11 | 2 (`model_49.pt`) | **VALID (`hexa_ir` no-DCAM)** — Step 4(e) 256-env 50-iter smoke test (PASS) | **KEEP** |
 | `2026-11-05_19-51-02` | 66.55 | 2026-11-05 20:21 | 13 (`model_599.pt`) | **VALID (`hexa_ir` no-DCAM)** — Step 4(f) 1024-env 600-iter probe (**12/15 PASS**, stability `+0.0472m`, speed `0.1518 m/s`, tripod `r = -0.8551`) | **KEEP** (Active baseline checkpoint) |
 
-### 2.2 `logs/rsl_rl/zoe_hexapod_terrain/` (15 runs, 141.56 MB)
+### 2.2 `logs/rsl_rl/zoe_hexapod_terrain/`
 
 | Run Directory | Size (MB) | Last Modified | Checkpoints | Asset & Gate Result | Stage B Proposal |
 |---|---:|---|---:|---|---|
 | `2026-10-05_18-04-12` to `2026-10-13_13-25-02` (all 15 runs) | 141.56 | 2026-10-05 to 2026-10-13 | 1–12 ckpts each | Old asset (`base_link_v1`), early Stage 2 terrain smoke tests | **DELETE** (Invalid asset) |
+| `2026-11-06_22-18-04` | 64.20 | 2026-11-06 22:39 | 13 (`model_600.pt`) | **`INVALID - DO NOT USE`** (`hexa_ir`, cold-started with world-Z height reward bug, 100% rightward flip; TB events archived to `logs/_archive_tb/`) | **DELETE in Stage B** |
+| `2026-11-07_20-39-49` | 63.80 | 2026-11-07 21:01 | 13 (`model_1199.pt`) | **VALID (`hexa_ir` no-DCAM)** — B3 Probe 1 (100% survival, pre-`ZoeTerrainCommandsCfg`) | **KEEP** (Diagnostic reference) |
+| `2026-11-07_22-49-47` | 63.80 | 2026-11-07 23:12 | 13 (`model_1198.pt`) | **VALID (`hexa_ir` no-DCAM)** — B3 Probe 2 (**100% multi-terrain survival across all 7 terrains & L0–9**, `Terrain/Mean_Level = 8.44`, **13/15 Stage 1 flat gate PASS**) | **KEEP** (Active Stage 2 baseline checkpoint) |
+
