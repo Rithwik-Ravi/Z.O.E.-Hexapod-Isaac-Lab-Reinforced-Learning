@@ -7,8 +7,8 @@ import os
 if len(sys.argv) > 1:
     log_file = sys.argv[1]
 else:
-    candidates = glob.glob("spdrbot3_direct_project/logs/rsl_rl/zoe_hexapod_rough/*/events.out.tfevents.*")
-    log_file = candidates[0] if candidates else "logs/rsl_rl/zoe_hexapod_rough/events.out.tfevents"
+    candidates = glob.glob("logs/rsl_rl/zoe_hexapod_deploy/*/events.out.tfevents.*") or glob.glob("logs/rsl_rl/zoe_hexapod_terrain/*/events.out.tfevents.*")
+    log_file = candidates[0] if candidates else "logs/rsl_rl/zoe_hexapod_deploy/events.out.tfevents"
 
 ea = event_accumulator.EventAccumulator(log_file)
 ea.Reload()
