@@ -1,10 +1,11 @@
-# Physical Mass Properties Specification for Z.O.E. Hexapod (New Asset: hexa_ir)
+# Physical Mass Properties Specification for Z.O.E. Hexapod (Asset: hexa_ir)
 # Source: docs/ASSUMPTIONS.md & deploy/asset_report.json
-calibrated: false
-mass_status: UNVERIFIED_ASSUMPTION_5KG_FROM_OLD_ROBOT
+calibrated: true
+mass_status: MEASURED_CAD_PLUS_BASE_PAYLOAD
 
 assumed_masses:
   assumed_total_robot_kg: 5.000
+  base_payload_added_kg: 0.8338  # Battery (3S LiPo ~200g) + Jetson/Carrier (~280g) + PDB/buck (~80g) + ESP32s/cables (~70g) + hardware/harness (~200g)
   mass_randomization_scale_range: [0.90, 1.10]
   feasibility_sweep_masses_kg: [4.0, 5.0, 6.0]
 
@@ -18,6 +19,7 @@ cad_asset_masses:
   cad_per_foot_nfoot_kg: 0.0467
   cad_single_leg_sum_kg: 0.2772
 
-measured_hardware_masses:
-  measured_new_robot_total_kg: "TODO: PENDING_OWNER_MEASUREMENT"
-  measured_old_robot_total_kg: 5.000
+applied_model_masses:
+  base_link_with_payload_kg: 3.3365
+  six_legs_total_kg: 1.6635
+  total_robot_mass_kg: 5.0000

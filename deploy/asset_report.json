@@ -1,12 +1,12 @@
 {
   "usd_path": "/home/rithwik/SpdrBot-main/hexapod/hexa/hexa.usd",
   "urdf_path": "/home/rithwik/SpdrBot-main/hexapod/hexa.urdf",
-  "total_mass_kg": 4.1662163734436035,
+  "total_mass_kg": 5.000000476837158,
   "assumed_real_mass_kg": 5.0,
   "base_body_name": "base_link",
-  "base_mass_kg": 2.5027287006378174,
+  "base_mass_kg": 3.336513042449951,
   "body_masses": {
-    "base_link": 2.5027287006378174,
+    "base_link": 3.336513042449951,
     "NCCUP6": 0.015043186023831367,
     "NCCUP1": 0.015043186023831367,
     "NCCUP5": 0.015043186023831367,
@@ -469,7 +469,7 @@
     },
     "all_zero_settled_height_m": 0.0032,
     "kinematic_standing_height_m": 0.1476,
-    "settled_standing_height_m": 0.1427,
+    "settled_standing_height_m": 0.1417,
     "coxa_mount_radii_m": {
       "leg_1": 0.1063,
       "leg_2": 0.1063,
@@ -562,7 +562,7 @@
       "NFOOT1": -0.0004,
       "NFOOT2": -0.0,
       "NFOOT3": -0.0004,
-      "NFOOT4": -0.0005,
+      "NFOOT4": -0.0004,
       "NFOOT5": -0.0,
       "NFOOT6": -0.0004
     },
@@ -571,7 +571,7 @@
       "NFOOT2": 0.2157,
       "NFOOT3": 0.2155,
       "NFOOT4": 0.2155,
-      "NFOOT5": 0.2157,
+      "NFOOT5": 0.2158,
       "NFOOT6": 0.216
     }
   },

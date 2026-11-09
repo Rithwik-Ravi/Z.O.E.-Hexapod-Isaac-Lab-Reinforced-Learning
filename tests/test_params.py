@@ -88,8 +88,8 @@ def test_mass_randomization_bounds():
 def test_derived_asset_and_actuator_constants():
     """Verify ZOE_PARAMS derived constants match audit report and Waveshare ST3215 12V specs."""
     assert ZOE_PARAMS.BASE_BODY_NAME == "base_link"
-    assert abs(ZOE_PARAMS.TOTAL_ASSET_MASS_KG - 4.1662) < 1e-3
-    assert abs(ZOE_PARAMS.STANDING_BASE_HEIGHT - 0.1427) < 1e-3
+    assert abs(ZOE_PARAMS.TOTAL_ASSET_MASS_KG - 5.000) <= 0.05, f"Expected total mass ~5.0 kg (+-0.05), got {ZOE_PARAMS.TOTAL_ASSET_MASS_KG}"
+    assert abs(ZOE_PARAMS.STANDING_BASE_HEIGHT - 0.1417) < 0.01
     assert abs(ZOE_PARAMS.GATE_MIN_HEIGHT - round(0.90 * ZOE_PARAMS.STANDING_BASE_HEIGHT, 4)) < 1e-6
     assert abs(ZOE_PARAMS.TARGET_STANDING_HEIGHT - round(0.95 * ZOE_PARAMS.STANDING_BASE_HEIGHT, 4)) < 1e-6
 

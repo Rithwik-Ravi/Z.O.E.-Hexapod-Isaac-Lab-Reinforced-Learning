@@ -41,12 +41,12 @@ _KIN_DATA = _ASSET_DATA.get("kinematics", {})
 
 # Derived geometric & mass constants from deploy/asset_report.json
 DERIVED_BASE_BODY_NAME: str = _ASSET_DATA.get("base_body_name", "base_link")
-DERIVED_TOTAL_ASSET_MASS_KG: float = float(_ASSET_DATA.get("total_mass_kg", 4.1662))
-DERIVED_BASE_LINK_MASS_KG: float = float(_ASSET_DATA.get("base_mass_kg", 2.5027))
+DERIVED_TOTAL_ASSET_MASS_KG: float = float(_ASSET_DATA.get("total_mass_kg", 5.0))
+DERIVED_BASE_LINK_MASS_KG: float = float(_ASSET_DATA.get("base_mass_kg", 3.3365))
 ASSUMED_TOTAL_MASS_KG: float = float(_ASSET_DATA.get("assumed_real_mass_kg", 5.0))
 
 DERIVED_KINEMATIC_STANDING_HEIGHT: float = float(_KIN_DATA.get("kinematic_standing_height_m", 0.1476))
-DERIVED_STANDING_BASE_HEIGHT: float = float(_KIN_DATA.get("settled_standing_height_m", 0.1427))
+DERIVED_STANDING_BASE_HEIGHT: float = float(_KIN_DATA.get("settled_standing_height_m", 0.1417))
 DERIVED_ALL_ZERO_SETTLED_HEIGHT: float = float(_KIN_DATA.get("all_zero_settled_height_m", 0.0032))
 
 # Frozen gate and reward height ratios relative to measured settled standing height
