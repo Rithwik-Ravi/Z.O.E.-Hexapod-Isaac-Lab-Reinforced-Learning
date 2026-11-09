@@ -25,7 +25,7 @@ This document is the single authoritative record of **KNOWN** owner hardware fac
 
 | Parameter | Assumed Value | Status | Rationale & How to Replace with Real Data |
 | :--- | :--- | :---: | :--- |
-| **Total Robot Mass** | **5.00 kg** (CAD native without `DCAM`: **4.1662 kg**) | **UNVERIFIED ASSUMPTION** | 5.0 kg was measured on the **OLD** robot. The new CAD (`hexa_ir`) has a native mass of 4.1662 kg without `DCAM` (4.5255 kg with `DCAM`): `base_link` = 2.5027 kg, `NCCUP1..6` = 0.0150 kg each, `NTHIGH1..6` = 0.2155 kg each, `NFOOT1..6` = 0.0467 kg each. Torque feasibility is evaluated at 4.0, 5.0, and 6.0 kg. Weigh the assembled new robot to replace. |
+| **Total Robot Mass** | **5.00 kg** (CAD links: **1.6635 kg**, `base_link` with payload: **3.3365 kg**) | **CALIBRATED ASSUMPTION** | 5.0 kg upper-bound mass model applied by keeping native CAD link masses ($1.6635\text{ kg}$) and adding $0.8338\text{ kg}$ payload mass (representing battery, Jetson, carrier, wiring, and standoffs) to `base_link` in `hexa_physics.usd` and `hexa.urdf`. Total mass verified at $5.0000\text{ kg} \pm 0.05$. Weigh the physical robot to replace. |
 | **Mass Domain Randomization** | **$\pm 10\%$** multiplicative (`[0.90, 1.10]`) | **ASSUMPTION** | Covers battery weight and wiring variance around the nominal mass. |
 | **Link Moments of Inertia** | Native Fusion 360 CAD inertia tensors (scaled proportionally if mass is scaled) | **UNVERIFIED ASSUMPTION** | Computed from CAD geometry in `hexa.urdf`. |
 | **Joint PD Stiffness ($K_p$)** | **16.0 N·m/rad** | **UNVERIFIED ASSUMPTION** | Keeps static standing sag $< 3^\circ$ while providing compliant give at footfall to relieve closed-chain internal forces. Replace via `scripts/fit_actuator_sim.py` once servo feedback is wired. |
