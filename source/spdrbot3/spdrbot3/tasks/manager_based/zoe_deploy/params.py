@@ -191,8 +191,8 @@ class ZoeRewardParams:
     stand_still_posture: float = -0.5
     stand_still_feet_grounded: float = 1.0  # Reward fraction of grounded feet when cmd < 0.05
     joint_vel_limit: float = -0.01
-    torque_limit: float = -0.5
-    torque_soft_limit_nm: float = 2.10  # 84% of 2.50 N.m effort limit (above 1.98 N.m 3-foot tripod torque at 5 kg)
+    torque_limit: float = -2.0
+    torque_soft_limit_nm: float = 1.95  # 1.95 N.m soft threshold (>1.88 N.m static tripod torque, penalizes saturation at 10-20% of tracking reward)
 
 
 @dataclass
