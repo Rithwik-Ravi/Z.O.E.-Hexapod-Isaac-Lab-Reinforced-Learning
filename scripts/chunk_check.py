@@ -216,6 +216,16 @@ def run_chunk_check():
     c2_vel_x_sum = 0.0
     c2_total_joint_steps = c2_steps * args_cli.num_envs * 18
 
+    # Joint limit proximity (<= 3 deg) and swing clearance tracking
+    PROX_RAD = math.radians(3.0)
+    coxa_ids = list(range(0, 6))
+    thigh_ids = list(range(6, 12))
+    foot_ids_joints = list(range(12, 18))
+    c2_coxa_near_count = 0
+    c2_thigh_near_count = 0
+    c2_foot_near_count = 0
+    max_swing_clearance_per_env_leg = torch.zeros((args_cli.num_envs, 6), device=args_cli.device)
+
     stability_margins = []
     foot_names = [f"NFOOT{i}" for i in range(1, 7)]
 
@@ -247,9 +257,25 @@ def run_chunk_check():
             # Liveness: forward velocity in body frame
             c2_vel_x_sum += robot.data.root_lin_vel_b[:, 0].sum().item()
 
+            # Joint limit proximity (<= 3 deg)
+            joint_limits = robot.data.joint_pos_limits
+            q = robot.data.joint_pos
+            near_lower = (q - joint_limits[:, :, 0]) <= PROX_RAD
+            near_upper = (joint_limits[:, :, 1] - q) <= PROX_RAD
+            near_limit = near_lower | near_upper
+            c2_coxa_near_count += near_limit[:, coxa_ids].sum().item()
+            c2_thigh_near_count += near_limit[:, thigh_ids].sum().item()
+            c2_foot_near_count += near_limit[:, foot_ids_joints].sum().item()
+
+            # Swing clearance per leg (flat ground z=0)
+            tip_pos_w = compute_foot_tip_positions(robot, robot_foot_ids, foot_names)
+            swing_mask = ~in_contact  # [num_envs, 6]
+            tip_z = tip_pos_w[..., 2]
+            current_swing_clearance = torch.where(swing_mask, tip_z, torch.zeros_like(tip_z))
+            max_swing_clearance_per_env_leg = torch.maximum(max_swing_clearance_per_env_leg, current_swing_clearance)
+
             # Stability margin calculation sampled every 5 steps (10 Hz)
             if step % 5 == 0:
-                tip_pos_w = compute_foot_tip_positions(robot, robot_foot_ids, foot_names)
                 com_2d_all = robot.data.root_pos_w[:, :2].cpu().numpy()
                 in_contact_cpu = in_contact.cpu().numpy()
                 tip_pos_cpu = tip_pos_w.cpu().numpy()
@@ -268,6 +294,12 @@ def run_chunk_check():
     c2_non_foot_pct = 100.0 * c2_non_foot_contacts / c2_total_frames
     c2_torque_sat_pct = 100.0 * c2_torque_sat_count / c2_total_joint_steps
     c2_mean_speed = c2_vel_x_sum / c2_total_frames
+
+    c2_total_type_joint_steps = c2_steps * args_cli.num_envs * 6
+    c2_coxa_prox_pct = 100.0 * c2_coxa_near_count / c2_total_type_joint_steps
+    c2_thigh_prox_pct = 100.0 * c2_thigh_near_count / c2_total_type_joint_steps
+    c2_foot_prox_pct = 100.0 * c2_foot_near_count / c2_total_type_joint_steps
+    c2_swing_clearance_cm = (max_swing_clearance_per_env_leg.mean(dim=0) * 100.0).cpu().tolist()
 
     mean_margin = float(np.mean(stability_margins)) if stability_margins else -1.0
     min_margin = float(np.min(stability_margins)) if stability_margins else -1.0
@@ -416,13 +448,21 @@ def run_chunk_check():
     })
 
     # =========================================================================
-    # REPORT-ONLY METRICS: Yaw (0.4 rad/s) & Strafe (0.12 m/s) (150 steps each)
+    # REPORT-ONLY METRICS: Dedicated Pure-Yaw Test (0.4 rad/s, 5.0s) & Strafe (0.12 m/s, 3.0s)
     # =========================================================================
-    print("\n--> Evaluating Report-Only Yaw & Strafe Tracking (3.0s each)...")
+    print("\n--> Evaluating Dedicated Pure-Yaw Test (cmd 0.40 rad/s, 5.0s = 250 steps)...")
     obs_res = env.reset()
     obs = obs_res[0] if isinstance(obs_res, tuple) else obs_res
-    yaw_steps = 150
+    yaw_steps = 250
     yaw_wz_sum = 0.0
+    yaw_feet_down_sum = 0.0
+    yaw_torque_sat_count = 0
+    yaw_coxa_near_count = 0
+    yaw_thigh_near_count = 0
+    yaw_foot_near_count = 0
+    yaw_total_joint_steps = yaw_steps * args_cli.num_envs * 18
+    yaw_total_type_steps = yaw_steps * args_cli.num_envs * 6
+
     with torch.no_grad():
         for _ in range(yaw_steps):
             cmd = unwrapped.command_manager.get_command("base_velocity")
@@ -431,10 +471,34 @@ def run_chunk_check():
             cmd[:, 2] = 0.40
             pol_obs = obs["policy"] if isinstance(obs, dict) else obs
             actions = policy(pol_obs)
-            yaw_wz_sum += robot.data.root_ang_vel_b[:, 2].sum().item()
-            obs = env.step(actions)[0]
-    mean_yaw_wz = yaw_wz_sum / (yaw_steps * args_cli.num_envs)
 
+            yaw_wz_sum += robot.data.root_ang_vel_b[:, 2].sum().item()
+
+            forces_z = contact_sensor.data.net_forces_w[:, foot_ids, 2]
+            yaw_feet_down_sum += (forces_z > 1.0).sum(dim=1).float().sum().item()
+
+            torques = torch.abs(robot.data.applied_torque)
+            yaw_torque_sat_count += (torques >= TORQUE_SAT_THRESHOLD).sum().item()
+
+            joint_limits = robot.data.joint_pos_limits
+            q = robot.data.joint_pos
+            near_limit = ((q - joint_limits[:, :, 0]) <= PROX_RAD) | ((joint_limits[:, :, 1] - q) <= PROX_RAD)
+            yaw_coxa_near_count += near_limit[:, coxa_ids].sum().item()
+            yaw_thigh_near_count += near_limit[:, thigh_ids].sum().item()
+            yaw_foot_near_count += near_limit[:, foot_ids_joints].sum().item()
+
+            obs = env.step(actions)[0]
+
+    c_yaw_frames = yaw_steps * args_cli.num_envs
+    mean_yaw_wz = yaw_wz_sum / c_yaw_frames
+    yaw_tracking_pct = 100.0 * mean_yaw_wz / 0.40
+    mean_yaw_feet_down = yaw_feet_down_sum / c_yaw_frames
+    yaw_torque_sat_pct = 100.0 * yaw_torque_sat_count / yaw_total_joint_steps
+    yaw_coxa_prox_pct = 100.0 * yaw_coxa_near_count / yaw_total_type_steps
+    yaw_thigh_prox_pct = 100.0 * yaw_thigh_near_count / yaw_total_type_steps
+    yaw_foot_prox_pct = 100.0 * yaw_foot_near_count / yaw_total_type_steps
+
+    print("\n--> Evaluating Report-Only Strafe Tracking (cmd 0.12 m/s, 3.0s = 150 steps)...")
     obs_res = env.reset()
     obs = obs_res[0] if isinstance(obs_res, tuple) else obs_res
     strafe_steps = 150
@@ -450,6 +514,7 @@ def run_chunk_check():
             strafe_vy_sum += robot.data.root_lin_vel_b[:, 1].sum().item()
             obs = env.step(actions)[0]
     mean_strafe_vy = strafe_vy_sum / (strafe_steps * args_cli.num_envs)
+    strafe_tracking_pct = 100.0 * mean_strafe_vy / 0.12
 
     # =========================================================================
     # SUMMARY TABLE & OVERALL GATE EVALUATION
@@ -466,12 +531,19 @@ def run_chunk_check():
 
     full_table = "\n".join([table_header, table_divider] + table_rows)
 
+    swing_str = ", ".join([f"L{i+1}: {c2_swing_clearance_cm[i]:.2f}cm" for i in range(6)])
+
     print("\n" + "=" * 90)
     print("                     CHUNK CHECK GATE EVALUATION SUMMARY")
     print("=" * 90)
     print(full_table)
     print("-" * 90)
-    print(f"REPORT-ONLY TRACKING: Yaw (cmd 0.40 rad/s) = {mean_yaw_wz:+.4f} rad/s | Strafe (cmd 0.12 m/s) = {mean_strafe_vy:+.4f} m/s")
+    print("REPORT-ONLY METRICS (Gate Thresholds Frozen):")
+    print(f"  Dedicated Pure-Yaw (0.40 rad/s) : {mean_yaw_wz:+.4f} rad/s ({yaw_tracking_pct:.1f}%), Feet: {mean_yaw_feet_down:.2f}/6, TorqSat: {yaw_torque_sat_pct:.2f}%")
+    print(f"  Pure-Yaw Joint Proximity (<=3 deg): Coxa: {yaw_coxa_prox_pct:.2f}%, Thigh: {yaw_thigh_prox_pct:.2f}%, Foot: {yaw_foot_prox_pct:.2f}%")
+    print(f"  Strafe Tracking (0.12 m/s)      : {mean_strafe_vy:+.4f} m/s ({strafe_tracking_pct:.1f}%)")
+    print(f"  Forward Walk Joint Prox (<=3 deg): Coxa: {c2_coxa_prox_pct:.2f}%, Thigh: {c2_thigh_prox_pct:.2f}%, Foot: {c2_foot_prox_pct:.2f}%")
+    print(f"  Swing Clearance per Leg (C2)    : {swing_str} (Note: 1-3 cm swing clearance is flat ground only)")
     print("=" * 90)
     print(f"OVERALL GATE VERDICT: {overall_status}")
     print("=" * 90 + "\n")
@@ -486,9 +558,23 @@ def run_chunk_check():
 - **Git Commit**: `{git_hash}`
 - **Checkpoint**: `{ckpt_path}`
 - **Overall Verdict**: **{overall_status}**
-- **Report-Only Metrics**: Yaw (cmd `0.40 rad/s`) = `{mean_yaw_wz:+.4f} rad/s`, Strafe (cmd `0.12 m/s`) = `{mean_strafe_vy:+.4f} m/s`
 
+### Gate Results (Frozen Thresholds)
 {full_table}
+
+### Report-Only Diagnostics
+- **Dedicated Pure-Yaw Test (cmd 0.40 rad/s, 5.0s)**:
+  - Yaw Rate: `{mean_yaw_wz:+.4f} rad/s` ({yaw_tracking_pct:.1f}% tracking)
+  - Mean Feet Down: `{mean_yaw_feet_down:.2f} / 6.0`
+  - Torque Saturation: `{yaw_torque_sat_pct:.2f}%`
+  - Joint Limit Proximity (<=3 deg): Coxa `{yaw_coxa_prox_pct:.2f}%`, Thigh `{yaw_thigh_prox_pct:.2f}%`, Foot `{yaw_foot_prox_pct:.2f}%`
+- **Strafe Tracking (cmd 0.12 m/s, 3.0s)**:
+  - Strafe Velocity: `{mean_strafe_vy:+.4f} m/s` ({strafe_tracking_pct:.1f}% tracking)
+- **Forward Walk Joint Limit Proximity (<=3 deg)**:
+  - Coxa: `{c2_coxa_prox_pct:.2f}%` | Thigh: `{c2_thigh_prox_pct:.2f}%` | Foot: `{c2_foot_prox_pct:.2f}%`
+- **Swing Clearance per Leg (Condition 2 Forward Walk)**:
+  - {swing_str}
+  - *(Note: 1-3 cm swing clearance is flat ground only.)*
 
 ---
 """
