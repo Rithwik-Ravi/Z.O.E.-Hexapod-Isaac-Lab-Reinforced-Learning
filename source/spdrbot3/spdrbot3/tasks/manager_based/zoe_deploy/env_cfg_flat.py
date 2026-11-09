@@ -436,15 +436,18 @@ class RewardsCfg:
 
 @configclass
 class CommandsCfg:
-    """Command generator configuration (Narrow ranges, 10% standing envs, no heading command)."""
-    base_velocity = mdp.UniformVelocityCommandCfg(
+    """Command generator configuration (with >=25% yaw-dominant envs, 10% standing envs, no heading command)."""
+    base_velocity = zoe_mdp.ZoeUniformVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=ZOE_PARAMS.commands.resampling_time_range,
         rel_standing_envs=ZOE_PARAMS.commands.rel_standing_envs,
         rel_heading_envs=ZOE_PARAMS.commands.rel_heading_envs,
+        rel_yaw_envs=ZOE_PARAMS.commands.rel_yaw_envs,
+        yaw_dominant_wz_range=ZOE_PARAMS.commands.yaw_dominant_wz_range,
+        yaw_dominant_lin_vel_range=ZOE_PARAMS.commands.yaw_dominant_lin_vel_range,
         heading_command=ZOE_PARAMS.commands.heading_command,
         debug_vis=True,
-        ranges=mdp.UniformVelocityCommandCfg.Ranges(
+        ranges=zoe_mdp.ZoeUniformVelocityCommandCfg.Ranges(
             lin_vel_x=ZOE_PARAMS.commands.lin_vel_x_range,
             lin_vel_y=ZOE_PARAMS.commands.lin_vel_y_range,
             ang_vel_z=ZOE_PARAMS.commands.ang_vel_z_range,

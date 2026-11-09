@@ -124,6 +124,9 @@ class ZoeCommandParams:
     ang_vel_z_range: tuple[float, float] = (-0.60, 0.60)  # rad/s
     rel_standing_envs: float = 0.10
     rel_heading_envs: float = 0.0
+    rel_yaw_envs: float = 0.30  # >= 25% yaw-dominant envs (|wz| in [0.3, 0.6], small vx, vy)
+    yaw_dominant_wz_range: tuple[float, float] = (0.30, 0.60)  # rad/s magnitude
+    yaw_dominant_lin_vel_range: tuple[float, float] = (-0.05, 0.05)  # m/s
     heading_command: bool = False
     resampling_time_range: tuple[float, float] = (3.0, 5.0)  # seconds
 
@@ -168,7 +171,7 @@ class ZoeEventParams:
 @dataclass
 class ZoeRewardParams:
     track_lin_vel_xy_exp: float = 2.0
-    track_ang_vel_z_exp: float = 0.5
+    track_ang_vel_z_exp: float = 1.0  # Increased from 0.5 to 1.0 to give competitive turning incentive against linear motion
     track_lin_vel_std: float = 0.13  # Width ~0.13 m/s so standing still earns <= 25% reward at 0.15 m/s cmd
     track_ang_vel_std: float = 0.25  # Width ~0.25 rad/s
     termination_penalty: float = -200.0
