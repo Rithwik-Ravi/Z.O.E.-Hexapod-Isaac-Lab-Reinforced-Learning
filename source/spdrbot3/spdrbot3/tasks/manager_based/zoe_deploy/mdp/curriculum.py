@@ -55,44 +55,59 @@ def get_column_terrain_names(terrain=None, num_cols: int = 10) -> list[str]:
 
 
 def compute_curriculum_step(
-    distance_walked: float | torch.Tensor,
-    commanded_distance: float | torch.Tensor,
-    was_terminated_early: bool | torch.Tensor,
-    cmd_speed: float | torch.Tensor | None = None,
+    commanded_travel: float | torch.Tensor = None,
+    achieved_travel: float | torch.Tensor = None,
+    was_terminated_early: bool | torch.Tensor = False,
     up_threshold: float = 0.75,
     down_threshold: float = 0.35,
+    min_commanded_travel: float = 0.50,
+    # Backward compatibility arguments
+    distance_walked: float | torch.Tensor = None,
+    commanded_distance: float | torch.Tensor = None,
+    cmd_speed: float | torch.Tensor | None = None,
     min_cmd_speed: float = 0.10,
     min_commanded_distance: float = 0.50,
 ):
-    """Pure-Python / PyTorch core logic for terrain curriculum updates.
+    """Core logic for terrain curriculum updates with step-integrated progress accounting.
 
-    - Make NO promotion or demotion decision when commanded travel distance is too small
-      (|cmd| < 0.10 m/s or commanded_distance < 0.50 m): keep current level.
-    - Move UP if not terminated early AND distance_walked >= up_threshold * commanded_distance
-    - Move DOWN if distance_walked < down_threshold * commanded_distance
-    - Otherwise KEEP current level
+    - commanded_travel = sum |cmd_xy| dt
+    - achieved_travel = sum max(0, v_xy . unit(cmd_xy)) dt (along command direction)
+    - progress_ratio = achieved_travel / commanded_travel (if commanded_travel >= 1e-4)
+    - Promote if: no early termination AND commanded_travel >= 0.5 m AND progress_ratio >= 0.75
+    - Demote if: early termination OR (commanded_travel >= 0.5 m AND progress_ratio < 0.35)
+    - Otherwise KEEP current level.
     """
-    if isinstance(distance_walked, (float, int)):
-        if commanded_distance < min_commanded_distance:
+    if commanded_travel is None:
+        commanded_travel = commanded_distance if commanded_distance is not None else 0.0
+    if achieved_travel is None:
+        achieved_travel = distance_walked if distance_walked is not None else 0.0
+    if min_commanded_travel is None:
+        min_commanded_travel = min_commanded_distance
+
+    if isinstance(commanded_travel, (float, int)):
+        if was_terminated_early:
+            return False, True
+        if commanded_travel < min_commanded_travel:
             return False, False
         if cmd_speed is not None and cmd_speed < min_cmd_speed:
             return False, False
-        if was_terminated_early:
-            move_up = False
-        else:
-            move_up = bool(distance_walked >= up_threshold * commanded_distance)
-        move_down = bool(distance_walked < down_threshold * commanded_distance)
+        ratio = achieved_travel / max(float(commanded_travel), 1e-4)
+        move_up = bool(ratio >= up_threshold)
+        move_down = bool(ratio < down_threshold)
         return move_up, move_down
 
-    eligible = commanded_distance >= min_commanded_distance
+    eligible = commanded_travel >= min_commanded_travel
     if cmd_speed is not None:
         eligible = eligible & (cmd_speed >= min_cmd_speed)
 
-    target_dist = up_threshold * commanded_distance
-    min_dist = down_threshold * commanded_distance
+    safe_cmd = torch.clamp(commanded_travel, min=1e-4)
+    ratio = torch.where(eligible, achieved_travel / safe_cmd, torch.zeros_like(achieved_travel))
 
-    move_up = eligible & (~was_terminated_early) & (distance_walked >= target_dist)
-    move_down = eligible & (distance_walked < min_dist)
+    if isinstance(was_terminated_early, bool):
+        was_terminated_early = torch.tensor(was_terminated_early, device=commanded_travel.device, dtype=torch.bool)
+
+    move_up = eligible & (~was_terminated_early) & (ratio >= up_threshold)
+    move_down = was_terminated_early | (eligible & (ratio < down_threshold))
     return move_up, move_down
 
 
@@ -111,28 +126,46 @@ def zoe_terrain_curriculum(
     name = getattr(asset_cfg, "name", "robot") if asset_cfg is not None else "robot"
     robot = env.scene[name]
 
-    steps_walked = env.episode_length_buf[env_ids]
-    if hasattr(env, "_last_reset_step") and env._last_reset_step is not None and hasattr(env, "common_step_counter"):
-        actual_steps = (int(env.common_step_counter) - env._last_reset_step[env_ids]).clamp(min=0)
-        steps_walked = torch.minimum(steps_walked, actual_steps)
-    episode_length = steps_walked.float() * env.step_dt
-    vel_cmd = env.command_manager.get_command("base_velocity")[env_ids]
-    cmd_speed = torch.norm(vel_cmd[:, :2], dim=-1)
-    commanded_distance = cmd_speed * episode_length
+    # (a) Check if command generator tracks commanded_travel and achieved_travel
+    cmd_gen = getattr(env, "command_manager", None)
+    base_vel_cmd = None
+    if cmd_gen is not None:
+        if hasattr(cmd_gen, "get_term"):
+            try:
+                base_vel_cmd = cmd_gen.get_term("base_velocity")
+            except Exception:
+                pass
+        elif hasattr(cmd_gen, "_terms") and "base_velocity" in cmd_gen._terms:
+            base_vel_cmd = cmd_gen._terms["base_velocity"]
 
-    # (a) Subtract env_origins xy from robot root_pos_w xy before computing distance walked
-    root_pos_xy = robot.data.root_pos_w[env_ids, :2]
-    origin_xy = env.scene.env_origins[env_ids, :2]
-    distance_walked = torch.norm(root_pos_xy - origin_xy, dim=-1)
+    if base_vel_cmd is not None and hasattr(base_vel_cmd, "commanded_travel") and hasattr(base_vel_cmd, "achieved_travel"):
+        commanded_travel = base_vel_cmd.commanded_travel[env_ids]
+        achieved_travel = base_vel_cmd.achieved_travel[env_ids]
+    elif hasattr(env, "commanded_travel") and hasattr(env, "achieved_travel"):
+        commanded_travel = env.commanded_travel[env_ids]
+        achieved_travel = env.achieved_travel[env_ids]
+    else:
+        # Fallback to local origin distance
+        steps_walked = env.episode_length_buf[env_ids]
+        if hasattr(env, "_last_reset_step") and env._last_reset_step is not None and hasattr(env, "common_step_counter"):
+            actual_steps = (int(env.common_step_counter) - env._last_reset_step[env_ids]).clamp(min=0)
+            steps_walked = torch.minimum(steps_walked, actual_steps)
+        episode_length = steps_walked.float() * env.step_dt
+        vel_cmd = env.command_manager.get_command("base_velocity")[env_ids]
+        cmd_speed = torch.norm(vel_cmd[:, :2], dim=-1)
+        commanded_travel = cmd_speed * episode_length
+
+        root_pos_xy = robot.data.root_pos_w[env_ids, :2]
+        origin_xy = env.scene.env_origins[env_ids, :2]
+        achieved_travel = torch.norm(root_pos_xy - origin_xy, dim=-1)
 
     was_terminated_early = env.termination_manager.terminated[env_ids] & (~env.termination_manager.time_outs[env_ids])
 
-    # (b) & (c) Compute move_up / move_down with standing-env protection
+    # (b) & (c) Compute move_up / move_down using progress ratio
     move_up, move_down = compute_curriculum_step(
-        distance_walked=distance_walked,
-        commanded_distance=commanded_distance,
+        commanded_travel=commanded_travel,
+        achieved_travel=achieved_travel,
         was_terminated_early=was_terminated_early,
-        cmd_speed=cmd_speed,
     )
 
     prev_levels = (
@@ -143,18 +176,35 @@ def zoe_terrain_curriculum(
 
     env.scene.terrain.update_env_origins(env_ids, move_up=move_up, move_down=move_down)
 
-    # (d) Strictly clamp terrain_levels to [0, max_level] and sync env_origins
+    # (d) Strictly clamp terrain_levels to [0, max_level] (Group S capped at level 3)
+    is_group_s = getattr(env, "is_group_s", None)
+    if is_group_s is None and base_vel_cmd is not None and hasattr(base_vel_cmd, "is_group_s"):
+        is_group_s = base_vel_cmd.is_group_s
+
     if prev_levels is not None and hasattr(env.scene.terrain, "terrain_levels"):
         max_terrain_level = int(getattr(env.scene.terrain, "max_terrain_level", 10))
         max_level = max(0, max_terrain_level - 1)
-        clamped_levels = torch.clamp(prev_levels + move_up.long() - move_down.long(), min=0, max=max_level)
+        new_levels = prev_levels + move_up.long() - move_down.long()
+
+        if is_group_s is not None:
+            group_s_env = is_group_s[env_ids]
+            cap = torch.where(
+                group_s_env,
+                torch.tensor(3, device=new_levels.device, dtype=new_levels.dtype),
+                torch.tensor(max_level, device=new_levels.device, dtype=new_levels.dtype),
+            )
+            zero_tensor = torch.zeros_like(cap)
+            clamped_levels = torch.clamp(new_levels, min=zero_tensor, max=cap)
+        else:
+            clamped_levels = torch.clamp(new_levels, min=0, max=max_level)
+
         env.scene.terrain.terrain_levels[env_ids] = clamped_levels
         if hasattr(env.scene.terrain, "terrain_origins") and hasattr(env.scene.terrain, "terrain_types"):
             env.scene.terrain.env_origins[env_ids] = env.scene.terrain.terrain_origins[
                 clamped_levels, env.scene.terrain.terrain_types[env_ids]
             ]
 
-    # (e) Per-terrain-type logging into extras["log"]: mean level, promotion rate, demotion rate, survival
+    # (e) Per-terrain-type logging into extras["log"]: mean level, promotion, demotion, survival, progress_ratio
     if hasattr(env.scene.terrain, "terrain_types") and hasattr(env.scene.terrain, "terrain_levels"):
         if "log" not in env.extras:
             env.extras["log"] = {}
@@ -164,10 +214,14 @@ def zoe_terrain_curriculum(
         reset_types = all_types[env_ids]
         survived = (~was_terminated_early).float()
 
+        safe_cmd = torch.clamp(commanded_travel, min=1e-4)
+        progress_ratio = torch.where(commanded_travel >= 0.50, achieved_travel / safe_cmd, torch.zeros_like(achieved_travel))
+
         env.extras["log"]["Terrain/Mean_Level"] = torch.mean(all_levels).item()
         env.extras["log"]["Terrain/Promotion_Rate"] = torch.mean(move_up.float()).item()
         env.extras["log"]["Terrain/Demotion_Rate"] = torch.mean(move_down.float()).item()
         env.extras["log"]["Terrain/Survival"] = torch.mean(survived).item()
+        env.extras["log"]["Terrain/Progress_Ratio"] = torch.mean(progress_ratio).item()
 
         col_names = get_column_terrain_names(env.scene.terrain)
         unique_names = list(dict.fromkeys(col_names))
@@ -182,3 +236,4 @@ def zoe_terrain_curriculum(
                 env.extras["log"][f"Terrain/{t_name}/promotion_rate"] = torch.mean(move_up[reset_mask].float()).item()
                 env.extras["log"][f"Terrain/{t_name}/demotion_rate"] = torch.mean(move_down[reset_mask].float()).item()
                 env.extras["log"][f"Terrain/{t_name}/survival"] = torch.mean(survived[reset_mask]).item()
+                env.extras["log"][f"Terrain/{t_name}/progress_ratio"] = torch.mean(progress_ratio[reset_mask]).item()

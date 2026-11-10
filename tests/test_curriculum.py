@@ -2,7 +2,17 @@
 # All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Unit tests for Z.O.E. Hexapod curriculum logic (A3)."""
+"""Unit tests for Z.O.E. Hexapod curriculum logic (Part A).
+
+Verifies:
+1. Step-integrated progress accounting (commanded_travel, achieved_travel, progress_ratio).
+2. Command reversals: forward then backward moves net 0 displacement from origin,
+   but step-integrated achieved travel correctly measures progress and promotes.
+3. Standing envs: commanded travel < 0.5 m keeps level (neither promote nor demote if survived).
+4. Early termination: robot falling over always demotes.
+5. Level clamping: [0, max_level] for Group T (0..9), [0, 3] for Group S (capped at 3).
+6. Extras logging: mean level, promotion, demotion, survival, progress_ratio per terrain type.
+"""
 
 import pytest
 import torch
@@ -13,89 +23,127 @@ from spdrbot3.tasks.manager_based.zoe_deploy.mdp.curriculum import (
 
 
 def test_curriculum_step_scalar():
-    # Success case: walked >= 0.75 * commanded, not terminated early
+    """Verify scalar curriculum step decisions."""
+    # Success case: ratio = 0.8 / 1.0 = 0.8 >= 0.75, not terminated early -> promote
     move_up, move_down = compute_curriculum_step(
-        distance_walked=0.8, commanded_distance=1.0, was_terminated_early=False, cmd_speed=0.20
+        commanded_travel=1.0, achieved_travel=0.8, was_terminated_early=False
     )
     assert move_up is True
     assert move_down is False
 
-    # Early termination case: walked >= 0.75 * commanded but terminated early
+    # Early termination case: fell over -> always demotes
     move_up, move_down = compute_curriculum_step(
-        distance_walked=0.8, commanded_distance=1.0, was_terminated_early=True, cmd_speed=0.20
-    )
-    assert move_up is False
-    assert move_down is False
-
-    # Failure case: walked < 0.35 * commanded
-    move_up, move_down = compute_curriculum_step(
-        distance_walked=0.2, commanded_distance=1.0, was_terminated_early=False, cmd_speed=0.20
+        commanded_travel=1.0, achieved_travel=0.8, was_terminated_early=True
     )
     assert move_up is False
     assert move_down is True
 
-    # Keep-level middle band: 0.35 <= walked < 0.75
+    # Failure case: ratio = 0.2 / 1.0 = 0.2 < 0.35, survived -> demote
     move_up, move_down = compute_curriculum_step(
-        distance_walked=0.5, commanded_distance=1.0, was_terminated_early=False, cmd_speed=0.20
+        commanded_travel=1.0, achieved_travel=0.2, was_terminated_early=False
+    )
+    assert move_up is False
+    assert move_down is True
+
+    # Middle band (keep level): ratio = 0.5 / 1.0 = 0.5, survived -> keep
+    move_up, move_down = compute_curriculum_step(
+        commanded_travel=1.0, achieved_travel=0.5, was_terminated_early=False
     )
     assert move_up is False
     assert move_down is False
 
 
 def test_curriculum_standing_envs_no_decision():
-    """Standing envs (|cmd| < 0.1 m/s or commanded_distance < 0.5 m) must NOT promote or demote."""
-    # Scalar standing env (cmd_speed = 0.0, distance = 0.0, commanded_distance = 0.0)
+    """Standing envs (commanded travel < 0.5 m) must NOT promote or demote if survived."""
+    # Scalar standing env (commanded = 0.0, achieved = 0.0, survived)
     move_up, move_down = compute_curriculum_step(
-        distance_walked=0.0, commanded_distance=0.0, was_terminated_early=False, cmd_speed=0.0
+        commanded_travel=0.0, achieved_travel=0.0, was_terminated_early=False
     )
     assert move_up is False
     assert move_down is False
 
-    # Scalar small speed (|cmd| = 0.05 < 0.10 m/s even over 20s -> commanded_distance = 1.0 m)
+    # Short commanded distance < 0.50 m (e.g. 0.40 m, survived)
     move_up, move_down = compute_curriculum_step(
-        distance_walked=0.9, commanded_distance=1.0, was_terminated_early=False, cmd_speed=0.05
+        commanded_travel=0.40, achieved_travel=0.38, was_terminated_early=False
     )
     assert move_up is False
     assert move_down is False
 
-    # Scalar short commanded distance (commanded_distance = 0.40 < 0.50 m even with cmd_speed = 0.20 m/s)
+    # Standing env that fell over (was_terminated_early=True) -> demote
     move_up, move_down = compute_curriculum_step(
-        distance_walked=0.0, commanded_distance=0.40, was_terminated_early=True, cmd_speed=0.20
+        commanded_travel=0.0, achieved_travel=0.0, was_terminated_early=True
     )
     assert move_up is False
-    assert move_down is False
+    assert move_down is True
 
     # Tensor batch with standing and walking envs
-    dist_walked = torch.tensor([0.0, 0.9, 0.1, 0.8, 0.2])
-    cmd_dist = torch.tensor([0.0, 1.0, 0.4, 1.0, 1.0])
-    cmd_speed = torch.tensor([0.0, 0.05, 0.20, 0.20, 0.20])
+    # env 0: standing, survived -> keep
+    # env 1: short cmd (0.4m), survived -> keep
+    # env 2: short cmd (0.4m), fell over -> demote
+    # env 3: walking (cmd 1.0m, ach 0.8m), survived -> promote
+    # env 4: walking (cmd 1.0m, ach 0.2m), survived -> demote
+    cmd_travel = torch.tensor([0.0, 0.4, 0.4, 1.0, 1.0])
+    ach_travel = torch.tensor([0.0, 0.35, 0.1, 0.8, 0.2])
     early_term = torch.tensor([False, False, True, False, False])
 
-    move_up, move_down = compute_curriculum_step(dist_walked, cmd_dist, early_term, cmd_speed=cmd_speed)
+    move_up, move_down = compute_curriculum_step(
+        commanded_travel=cmd_travel, achieved_travel=ach_travel, was_terminated_early=early_term
+    )
     assert torch.equal(move_up, torch.tensor([False, False, False, True, False]))
-    assert torch.equal(move_down, torch.tensor([False, False, False, False, True]))
+    assert torch.equal(move_down, torch.tensor([False, False, True, False, True]))
+
+
+def test_curriculum_command_reversals():
+    """Verify that command reversals (forward then backward) work with step-integrated accounting.
+
+    Scenario:
+    - Steps 0-250 (5s): commanded +0.20 m/s vx -> commanded travel = 1.0 m, robot walks +0.95 m
+    - Steps 250-500 (5s): commanded -0.20 m/s vx -> commanded travel = 1.0 m, robot walks -0.95 m
+    Total commanded travel = 2.0 m
+    Step-integrated achieved travel along command direction:
+      sum max(0, v_xy . unit(cmd_xy)) dt = 0.95 + 0.95 = 1.90 m
+    progress_ratio = 1.90 / 2.0 = 0.95 >= 0.75
+    Net displacement from origin: |0.95 - 0.95| = 0.0 m (displacement metric would fail!)
+    """
+    cmd_travel = 2.0
+    ach_travel = 1.90  # step-integrated
+    net_origin_disp = 0.0  # old flawed metric
+
+    # Old flawed metric would demote (0.0 < 0.35 * 2.0)
+    move_up_old, move_down_old = compute_curriculum_step(
+        commanded_travel=cmd_travel, achieved_travel=net_origin_disp, was_terminated_early=False
+    )
+    assert move_up_old is False
+    assert move_down_old is True  # FAILED with old metric!
+
+    # New step-integrated progress accounting correctly promotes
+    move_up_new, move_down_new = compute_curriculum_step(
+        commanded_travel=cmd_travel, achieved_travel=ach_travel, was_terminated_early=False
+    )
+    assert move_up_new is True
+    assert move_down_new is False
 
 
 def test_zoe_terrain_curriculum_far_from_world_origin_clamping_and_logging():
     """Verify zoe_terrain_curriculum:
-    (a) Subtracts env_origins xy so robots at (36m, 24m) are measured by local travel, not 43m from (0,0)
+    (a) Uses step-integrated command travel and achieved travel
     (b) Standing envs keep their level
-    (c) Promotes >= 0.75x (not early term) and demotes < 0.35x
-    (d) Clamps levels to [0, max_level] (0 does not go to -1; 9 does not wrap or exceed 9)
-    (e) Logs per-terrain-type mean_level, promotion_rate, demotion_rate, survival in extras['log']
+    (c) Promotes >= 0.75x (not early term) and demotes < 0.35x or early term
+    (d) Clamps levels to [0, max_level] for Group T and [0, 3] for Group S
+    (e) Logs per-terrain-type mean_level, promotion_rate, demotion_rate, survival, progress_ratio
     """
 
     class _DummyTerrain:
         def __init__(self):
             self.max_terrain_level = 10  # levels 0..9
             # 6 envs:
-            # env 0 (col 0 = flat): level 0, walks only 0.1m of 2.0m at world (36, 24) -> demote clamped at 0
-            # env 1 (col 2 = rough): level 5, walks only 0.1m of 2.0m at world (-32, 28) -> demote to 4
-            # env 2 (col 4 = slope_up): level 4, walks 1.8m of 2.0m at world (20, -20), timeout -> promote to 5
-            # env 3 (col 5 = slope_down): level 9 (max), walks 1.9m of 2.0m, timeout -> promote clamped at 9
-            # env 4 (col 6 = stairs_up): level 3, standing (cmd=0, dist=0) at world (40, 40) -> keep level 3
-            # env 5 (col 9 = boxes): level 2, walks 1.8m of 2.0m but early terminated -> keep level 2
-            self.terrain_levels = torch.tensor([0, 5, 4, 9, 3, 2], dtype=torch.long)
+            # env 0 (col 0 = flat, Group T): level 0, achieved 0.2m of 2.0m -> demote clamped at 0
+            # env 1 (col 2 = rough, Group S): level 3 (Group S cap), achieved 1.8m of 2.0m -> promote clamped at 3
+            # env 2 (col 4 = slope_up, Group T): level 4, achieved 1.8m of 2.0m -> promote to 5
+            # env 3 (col 5 = slope_down, Group T): level 9 (max), achieved 1.9m of 2.0m -> promote clamped at 9
+            # env 4 (col 6 = stairs_up, Group S): level 2, standing (cmd=0, ach=0) -> keep level 2
+            # env 5 (col 9 = boxes, Group T): level 2, achieved 1.8m of 2.0m but early term -> demote to 1
+            self.terrain_levels = torch.tensor([0, 3, 4, 9, 2, 2], dtype=torch.long)
             self.terrain_types = torch.tensor([0, 2, 4, 5, 6, 9], dtype=torch.long)
             self.terrain_origins = torch.zeros((10, 10, 3), dtype=torch.float32)
             for r in range(10):
@@ -111,30 +159,40 @@ def test_zoe_terrain_curriculum_far_from_world_origin_clamping_and_logging():
             ], dtype=torch.float32)
 
         def update_env_origins(self, env_ids, move_up, move_down):
-            # Simulate Isaac Lab's default behavior (including random wrap at >= max_terrain_level)
             self.terrain_levels[env_ids] += 1 * move_up.long() - 1 * move_down.long()
             self.terrain_levels[env_ids] = torch.where(
                 self.terrain_levels[env_ids] >= self.max_terrain_level,
-                torch.zeros_like(self.terrain_levels[env_ids]),  # would wrap to 0 without A3(d) clamp!
+                torch.zeros_like(self.terrain_levels[env_ids]),
                 torch.clip(self.terrain_levels[env_ids], 0),
             )
 
     class _DummyRobotData:
-        def __init__(self, origins, displacements_xy):
+        def __init__(self, origins):
             self.root_pos_w = origins.clone()
-            self.root_pos_w[:, 0] += displacements_xy[:, 0]
-            self.root_pos_w[:, 1] += displacements_xy[:, 1]
 
     class _DummyRobot:
-        def __init__(self, origins, displacements_xy):
-            self.data = _DummyRobotData(origins, displacements_xy)
+        def __init__(self, origins):
+            self.data = _DummyRobotData(origins)
+
+    class _DummyCmd:
+        def __init__(self):
+            # Step-integrated travel
+            self.commanded_travel = torch.tensor([2.0, 2.0, 2.0, 2.0, 0.0, 2.0], dtype=torch.float32)
+            self.achieved_travel = torch.tensor([0.2, 1.8, 1.8, 1.9, 0.0, 1.8], dtype=torch.float32)
+            # Group S mask: envs 1 and 4 are Group S
+            self.is_group_s = torch.tensor([False, True, False, False, True, False], dtype=torch.bool)
 
     class _DummyCmdMgr:
-        def __init__(self, cmds):
-            self._cmds = cmds
+        def __init__(self, cmd):
+            self._cmd = cmd
+
+        def get_term(self, name):
+            if name == "base_velocity":
+                return self._cmd
+            return None
 
         def get_command(self, name):
-            return self._cmds
+            return torch.zeros((6, 3))
 
     class _DummyTermMgr:
         def __init__(self, terminated, time_outs):
@@ -150,31 +208,16 @@ def test_zoe_terrain_curriculum_far_from_world_origin_clamping_and_logging():
     class _DummyEnv:
         def __init__(self):
             terrain = _DummyTerrain()
-            # Local displacements from each tile's env_origin
-            displacements = torch.tensor([
-                [0.10, 0.0],  # env 0: 0.10m (< 0.35 * 2.0)
-                [0.10, 0.0],  # env 1: 0.10m (< 0.35 * 2.0)
-                [1.80, 0.0],  # env 2: 1.80m (>= 0.75 * 2.0)
-                [1.90, 0.0],  # env 3: 1.90m (>= 0.75 * 2.0)
-                [0.00, 0.0],  # env 4: 0.00m (standing)
-                [1.80, 0.0],  # env 5: 1.80m (early term)
-            ], dtype=torch.float32)
-            robot = _DummyRobot(terrain.env_origins, displacements)
+            robot = _DummyRobot(terrain.env_origins)
             self.scene = _DummyScene(terrain, robot)
             self.step_dt = 0.02
-            self.episode_length_buf = torch.full((6,), 500, dtype=torch.long)  # 10.0s
-            cmds = torch.tensor([
-                [0.20, 0.0, 0.0],  # cmd_dist = 2.0m
-                [0.20, 0.0, 0.0],  # cmd_dist = 2.0m
-                [0.20, 0.0, 0.0],  # cmd_dist = 2.0m
-                [0.20, 0.0, 0.0],  # cmd_dist = 2.0m
-                [0.00, 0.0, 0.0],  # standing: cmd_dist = 0.0m
-                [0.20, 0.0, 0.0],  # cmd_dist = 2.0m
-            ], dtype=torch.float32)
-            self.command_manager = _DummyCmdMgr(cmds)
+            self.episode_length_buf = torch.full((6,), 500, dtype=torch.long)
+            cmd = _DummyCmd()
+            self.command_manager = _DummyCmdMgr(cmd)
+            self.is_group_s = cmd.is_group_s
             self.termination_manager = _DummyTermMgr(
                 terminated=torch.tensor([True, True, True, True, True, True]),
-                time_outs=torch.tensor([False, False, True, True, True, False]),
+                time_outs=torch.tensor([False, True, True, True, True, False]),  # envs 0 & 5 early terminated
             )
             self.extras = {}
 
@@ -184,30 +227,37 @@ def test_zoe_terrain_curriculum_far_from_world_origin_clamping_and_logging():
 
     # Expected levels:
     # env 0: 0 -> clamped at 0
-    # env 1: 5 -> demoted to 4 (even though world pos is (-32, 28), 42.5m from world origin!)
+    # env 1: 3 -> promoted, but Group S capped at 3 -> clamped at 3!
     # env 2: 4 -> promoted to 5
     # env 3: 9 -> clamped at 9 (did NOT wrap to 0)
-    # env 4: 3 -> kept at 3 (standing env did NOT promote)
-    # env 5: 2 -> kept at 2 (terminated early did NOT promote)
-    assert torch.equal(env.scene.terrain.terrain_levels, torch.tensor([0, 4, 5, 9, 3, 2], dtype=torch.long))
+    # env 4: 2 -> kept at 2 (standing env did NOT promote or demote)
+    # env 5: 2 -> demoted to 1 (early terminated!)
+    assert torch.equal(
+        env.scene.terrain.terrain_levels,
+        torch.tensor([0, 3, 5, 9, 2, 1], dtype=torch.long),
+    )
 
     # Check per-terrain-type logs in extras["log"]
     log = env.extras["log"]
     assert "Terrain/Mean_Level" in log
+    assert "Terrain/Progress_Ratio" in log
     for t_name in ["flat", "rough", "slope_up", "slope_down", "stairs_up", "boxes"]:
         assert f"Terrain/{t_name}/mean_level" in log
         assert f"Terrain/{t_name}/promotion_rate" in log
         assert f"Terrain/{t_name}/demotion_rate" in log
         assert f"Terrain/{t_name}/survival" in log
+        assert f"Terrain/{t_name}/progress_ratio" in log
 
-    assert log["Terrain/rough/demotion_rate"] == 1.0
+    assert log["Terrain/flat/demotion_rate"] == 1.0
+    assert log["Terrain/rough/promotion_rate"] == 1.0
     assert log["Terrain/slope_up/promotion_rate"] == 1.0
     assert log["Terrain/stairs_up/promotion_rate"] == 0.0
     assert log["Terrain/stairs_up/demotion_rate"] == 0.0
+    assert log["Terrain/boxes/demotion_rate"] == 1.0
 
 
 def test_max_init_terrain_level_not_none():
-    """A4 unit test: fail if max_init_terrain_level is None in ZoeTerrainSceneCfg."""
+    """Fail if max_init_terrain_level is None in ZoeTerrainSceneCfg."""
     import ast
     import os
 
@@ -230,4 +280,3 @@ def test_max_init_terrain_level_not_none():
                 f"Expected max_init_terrain_level == 1, got {ast.dump(node.value)}"
             )
     assert found_kw, "max_init_terrain_level keyword not found in env_cfg_terrain.py"
-
