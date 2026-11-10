@@ -356,3 +356,67 @@ def test_max_init_terrain_level_not_none():
                 f"Expected max_init_terrain_level == 1, got {ast.dump(node.value)}"
             )
     assert found_kw, "max_init_terrain_level keyword not found in env_cfg_terrain.py"
+
+
+def test_penalty_scale_ramp():
+    """Verify penalty_scale_ramp multiplies penalties by 0.1 at iter 0 to 1.0 at iter 800 (Task 4)."""
+    from spdrbot3.tasks.manager_based.zoe_deploy.mdp.curriculum import penalty_scale_ramp
+
+    class _DummyTermCfg:
+        def __init__(self, weight):
+            self.weight = weight
+
+    class _DummyRewardManager:
+        def __init__(self):
+            self._terms = {
+                "torque_limit": _DummyTermCfg(-2.0),
+                "fewer_than_4_feet_contact": _DummyTermCfg(-0.05),
+                "dof_acc_l2": _DummyTermCfg(-2.5e-7),
+                "action_rate_l2": _DummyTermCfg(-0.005),
+                "stand_still_posture": _DummyTermCfg(-0.5),
+                "joint_vel_limit": _DummyTermCfg(-0.01),
+            }
+            self._term_names = list(self._terms.keys())
+
+        def get_term_cfg(self, name):
+            return self._terms[name]
+
+        def set_term_cfg(self, name, cfg):
+            self._terms[name] = cfg
+
+    class _DummyEnv:
+        def __init__(self):
+            self.reward_manager = _DummyRewardManager()
+            self.common_step_counter = 0
+            self.extras = {}
+
+    env = _DummyEnv()
+
+    # Step 0 (iteration 0): scale must be 0.10
+    env.common_step_counter = 0
+    scale_0 = penalty_scale_ramp(env)
+    assert abs(scale_0 - 0.10) < 1e-4
+    assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-0.20)) < 1e-4
+    assert abs(env.reward_manager.get_term_cfg("fewer_than_4_feet_contact").weight - (-0.005)) < 1e-4
+    assert abs(env.extras["log"]["Curriculum/penalty_scale"] - 0.10) < 1e-4
+
+    # Step 19200 (iteration 400 = 19200 / 48): scale must be 0.10 + 0.90 * (400 / 800) = 0.55
+    env.common_step_counter = 19200
+    scale_400 = penalty_scale_ramp(env)
+    assert abs(scale_400 - 0.55) < 1e-4
+    assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-1.10)) < 1e-4
+    assert abs(env.extras["log"]["Curriculum/penalty_scale"] - 0.55) < 1e-4
+
+    # Step 38400 (iteration 800 = 38400 / 48): scale must be 1.00
+    env.common_step_counter = 38400
+    scale_800 = penalty_scale_ramp(env)
+    assert abs(scale_800 - 1.00) < 1e-4
+    assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-2.00)) < 1e-4
+    assert abs(env.extras["log"]["Curriculum/penalty_scale"] - 1.00) < 1e-4
+
+    # Step 48000 (iteration 1000): clamped at 1.00
+    env.common_step_counter = 48000
+    scale_1000 = penalty_scale_ramp(env)
+    assert abs(scale_1000 - 1.00) < 1e-4
+    assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-2.00)) < 1e-4
+

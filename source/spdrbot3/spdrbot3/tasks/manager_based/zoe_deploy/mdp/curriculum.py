@@ -4,6 +4,7 @@
 
 """MDP Curriculum terms for Z.O.E. Hexapod terrain task."""
 
+from collections.abc import Sequence
 import torch
 try:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -237,3 +238,72 @@ def zoe_terrain_curriculum(
                 env.extras["log"][f"Terrain/{t_name}/demotion_rate"] = torch.mean(move_down[reset_mask].float()).item()
                 env.extras["log"][f"Terrain/{t_name}/survival"] = torch.mean(survived[reset_mask]).item()
                 env.extras["log"][f"Terrain/{t_name}/progress_ratio"] = torch.mean(progress_ratio[reset_mask]).item()
+
+
+PENALTY_RAMP_TERMS: list[tuple[str, ...]] = [
+    ("torque_limit", "torque_limit_penalty"),
+    ("fewer_than_4_feet_contact",),
+    ("dof_acc_l2", "dof_acc"),
+    ("action_rate_l2", "action_rate"),
+    ("stand_still_posture", "stand_still_posture_penalty"),
+    ("joint_vel_limit", "joint_vel_limit_penalty"),
+]
+
+
+def penalty_scale_ramp(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int] | None = None,
+    num_steps_per_env: int = 48,
+    max_iter: float = 800.0,
+    min_scale: float = 0.1,
+    max_scale: float = 1.0,
+) -> float:
+    """Curriculum term that scales harsh penalty reward terms over the first 800 iterations (Task 4).
+
+    Schedule: scale = min(1.0, 0.1 + 0.9 * (iteration / 800.0))
+    Multiplies base weights of:
+    - torque_limit_penalty (or torque_limit)
+    - fewer_than_4_feet_contact
+    - dof_acc (or dof_acc_l2)
+    - action_rate (or action_rate_l2)
+    - stand_still_posture (or stand_still_posture_penalty)
+    - joint_vel_limit (or joint_vel_limit_penalty)
+
+    Derives iteration correctly from common_step_counter / num_steps_per_env (48).
+    Logs 'Curriculum/penalty_scale' to TensorBoard via env.extras['log'].
+    """
+    if not hasattr(env, "reward_manager") or env.reward_manager is None:
+        return 1.0
+
+    # Cache base weights on first call
+    if not hasattr(env, "_penalty_ramp_base_weights"):
+        env._penalty_ramp_base_weights = {}
+        for name_tuple in PENALTY_RAMP_TERMS:
+            for candidate in name_tuple:
+                if candidate in env.reward_manager._term_names:
+                    term_cfg = env.reward_manager.get_term_cfg(candidate)
+                    env._penalty_ramp_base_weights[candidate] = float(term_cfg.weight)
+                    break
+
+    # Derive iteration from step counter
+    common_step_counter = getattr(env, "common_step_counter", 0)
+    current_iter = float(common_step_counter) / float(num_steps_per_env)
+
+    # Compute ramp scale: 0.1 at iter 0 rising linearly to 1.0 at iter 800
+    progress = max(0.0, min(1.0, current_iter / max_iter))
+    scale = min_scale + (max_scale - min_scale) * progress
+
+    # Update active weights in reward manager
+    for term_name, base_weight in env._penalty_ramp_base_weights.items():
+        term_cfg = env.reward_manager.get_term_cfg(term_name)
+        term_cfg.weight = base_weight * scale
+        env.reward_manager.set_term_cfg(term_name, term_cfg)
+
+    # Log to TensorBoard
+    if not hasattr(env, "extras") or env.extras is None:
+        env.extras = {}
+    if "log" not in env.extras:
+        env.extras["log"] = {}
+    env.extras["log"]["Curriculum/penalty_scale"] = scale
+
+    return scale
