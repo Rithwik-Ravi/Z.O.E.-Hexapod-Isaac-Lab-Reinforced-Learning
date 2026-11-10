@@ -69,19 +69,10 @@ class ZoeTerrainRewardsCfg(RewardsCfg):
 
 @configclass
 class ZoeTerrainCommandsCfg(CommandsCfg):
-    """Consistent 20s episode traversal commands for multi-terrain curriculum."""
-    base_velocity = mdp.UniformVelocityCommandCfg(
+    """Two-group command generator for Stage 2 terrain training (Part B)."""
+    base_velocity = zoe_mdp.ZoeTerrainTwoGroupCommandCfg(
         asset_name="robot",
-        resampling_time_range=(20.0, 20.0),
-        rel_standing_envs=ZOE_PARAMS.commands.rel_standing_envs,
-        rel_heading_envs=ZOE_PARAMS.commands.rel_heading_envs,
-        heading_command=ZOE_PARAMS.commands.heading_command,
         debug_vis=True,
-        ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.15, 0.25),
-            lin_vel_y=(-0.05, 0.05),
-            ang_vel_z=(-0.05, 0.05),
-        ),
     )
 
 

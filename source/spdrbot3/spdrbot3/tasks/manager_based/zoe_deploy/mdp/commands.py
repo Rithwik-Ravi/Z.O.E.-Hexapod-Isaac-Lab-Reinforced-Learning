@@ -73,3 +73,209 @@ class ZoeUniformVelocityCommandCfg(UniformVelocityCommandCfg):
 
     yaw_dominant_lin_vel_range: tuple[float, float] = (-0.05, 0.05)
     """Small linear velocity range for yaw-dominant envs (m/s)."""
+
+
+class ZoeTerrainTwoGroupCommand(UniformVelocityCommand):
+    """Two-group command generator for Stage 2 terrain training (Part B).
+
+    - Group T (Traversal, ~50%):
+        Command held for whole 20s episode.
+        vx in [0.10, 0.25], vy in [-0.10, 0.10], wz in [-0.30, 0.30].
+        No standing envs. Full terrain curriculum (levels 0..9).
+    - Group S (Skills, ~50%):
+        Stage 1 distribution (resample every 3-5 s, 10% standing, >= 25% yaw-dominant, backward allowed).
+        Terrain level capped at 3, spread across all terrain types.
+    - Step-integrated progress tracking:
+        commanded_travel = sum |cmd_xy| dt
+        achieved_travel = sum max(0, v_xy . unit(cmd_xy)) dt
+    """
+
+    cfg: ZoeTerrainTwoGroupCommandCfg
+
+    def __init__(self, cfg: ZoeTerrainTwoGroupCommandCfg, env: any):
+        super().__init__(cfg, env)
+
+        # Alternating even/odd env indices guarantees exactly 50% split across all terrain columns
+        self.is_group_s = (torch.arange(self.num_envs, device=self.device) % 2 == 1)
+        self._env.is_group_s = self.is_group_s
+
+        # Buffers for step-integrated progress accounting (Part A)
+        self.commanded_travel = torch.zeros(self.num_envs, device=self.device, dtype=torch.float32)
+        self.achieved_travel = torch.zeros(self.num_envs, device=self.device, dtype=torch.float32)
+        self._env.commanded_travel = self.commanded_travel
+        self._env.achieved_travel = self.achieved_travel
+
+        # Confirm group sizes at runtime
+        n_s = self.is_group_s.sum().item()
+        n_t = self.num_envs - n_s
+        print(
+            f"[ZoeTerrainTwoGroupCommand] Group T (Traversal): {n_t} envs ({n_t / self.num_envs * 100:.1f}%) | "
+            f"Group S (Skills): {n_s} envs ({n_s / self.num_envs * 100:.1f}%) [Total: {self.num_envs}]"
+        )
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> dict[str, float]:
+        """Reset the command generator and clear accumulated travel for reset envs."""
+        if env_ids is None:
+            env_ids = slice(None)
+        # Note: curriculum was evaluated before reset in ManagerBasedRLEnv.reset(),
+        # so commanded_travel and achieved_travel have already been consumed.
+        self.commanded_travel[env_ids] = 0.0
+        self.achieved_travel[env_ids] = 0.0
+        return super().reset(env_ids)
+
+    def _resample(self, env_ids: Sequence[int]):
+        """Resample time_left independently for Group T (20s) and Group S (3-5s)."""
+        if len(env_ids) == 0:
+            return
+        env_ids_tensor = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        group_s_mask = self.is_group_s[env_ids_tensor]
+        t_ids = env_ids_tensor[~group_s_mask]
+        s_ids = env_ids_tensor[group_s_mask]
+
+        if len(t_ids) > 0:
+            self.time_left[t_ids] = torch.empty(len(t_ids), device=self.device).uniform_(
+                *self.cfg.group_t_resampling_time_range
+            )
+        if len(s_ids) > 0:
+            self.time_left[s_ids] = torch.empty(len(s_ids), device=self.device).uniform_(
+                *self.cfg.group_s_resampling_time_range
+            )
+
+        self._resample_command(env_ids)
+        self.command_counter[env_ids] += 1
+
+    def _resample_command(self, env_ids: Sequence[int]):
+        """Sample velocity commands according to group distributions."""
+        if len(env_ids) == 0:
+            return
+        env_ids_tensor = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        group_s_mask = self.is_group_s[env_ids_tensor]
+        t_ids = env_ids_tensor[~group_s_mask]
+        s_ids = env_ids_tensor[group_s_mask]
+
+        # Group T: Traversal (held for 20s episode, forward traversal with mild heading variations)
+        if len(t_ids) > 0:
+            n_t = len(t_ids)
+            self.is_standing_env[t_ids] = False
+            self.vel_command_b[t_ids, 0] = torch.empty(n_t, device=self.device).uniform_(
+                *self.cfg.group_t_ranges.lin_vel_x
+            )
+            self.vel_command_b[t_ids, 1] = torch.empty(n_t, device=self.device).uniform_(
+                *self.cfg.group_t_ranges.lin_vel_y
+            )
+            self.vel_command_b[t_ids, 2] = torch.empty(n_t, device=self.device).uniform_(
+                *self.cfg.group_t_ranges.ang_vel_z
+            )
+            if self.cfg.heading_command:
+                self.heading_target[t_ids] = torch.empty(n_t, device=self.device).uniform_(-3.14159, 3.14159)
+                self.is_heading_env[t_ids] = True
+            else:
+                self.is_heading_env[t_ids] = False
+
+        # Group S: Skills (Stage 1 distribution: 10% standing, >= 25% yaw-dominant, backward allowed)
+        if len(s_ids) > 0:
+            n_s = len(s_ids)
+            # 10% standing envs
+            r_stand = torch.rand(n_s, device=self.device)
+            stand_mask = r_stand < self.cfg.group_s_rel_standing_envs
+            self.is_standing_env[s_ids] = stand_mask
+
+            # Sample general skill commands
+            self.vel_command_b[s_ids, 0] = torch.empty(n_s, device=self.device).uniform_(
+                *self.cfg.group_s_ranges.lin_vel_x
+            )
+            self.vel_command_b[s_ids, 1] = torch.empty(n_s, device=self.device).uniform_(
+                *self.cfg.group_s_ranges.lin_vel_y
+            )
+            self.vel_command_b[s_ids, 2] = torch.empty(n_s, device=self.device).uniform_(
+                *self.cfg.group_s_ranges.ang_vel_z
+            )
+
+            # >= 25% yaw-dominant among non-standing envs
+            non_stand_mask = ~stand_mask
+            if non_stand_mask.any():
+                non_stand_ids = s_ids[non_stand_mask]
+                n_ns = len(non_stand_ids)
+                r_yaw = torch.rand(n_ns, device=self.device)
+                yaw_mask = r_yaw < self.cfg.group_s_rel_yaw_envs
+                if yaw_mask.any():
+                    yaw_ids = non_stand_ids[yaw_mask]
+                    n_y = len(yaw_ids)
+                    vx_min, vx_max = self.cfg.group_s_yaw_dominant_lin_vel_range
+                    vy_min, vy_max = self.cfg.group_s_yaw_dominant_lin_vel_range
+                    self.vel_command_b[yaw_ids, 0] = torch.empty(n_y, device=self.device).uniform_(vx_min, vx_max)
+                    self.vel_command_b[yaw_ids, 1] = torch.empty(n_y, device=self.device).uniform_(vy_min, vy_max)
+                    wz_min, wz_max = self.cfg.group_s_yaw_dominant_wz_range
+                    wz_mag = torch.empty(n_y, device=self.device).uniform_(wz_min, wz_max)
+                    sign = torch.where(torch.rand(n_y, device=self.device) < 0.5, 1.0, -1.0)
+                    self.vel_command_b[yaw_ids, 2] = sign * wz_mag
+
+            if self.cfg.heading_command:
+                heading_range = self.cfg.ranges.heading if self.cfg.ranges.heading is not None else (-3.14159, 3.14159)
+                self.heading_target[s_ids] = torch.empty(n_s, device=self.device).uniform_(*heading_range)
+                self.is_heading_env[s_ids] = torch.rand(n_s, device=self.device) < self.cfg.rel_heading_envs
+            else:
+                self.is_heading_env[s_ids] = False
+
+    def _update_metrics(self):
+        super()._update_metrics()
+        cmd_xy = self.vel_command_b[:, :2]
+        cmd_speed = torch.norm(cmd_xy, dim=-1)
+        dt = float(self._env.step_dt)
+        self.commanded_travel += cmd_speed * dt
+
+        robot_vel_xy = self.robot.data.root_lin_vel_b[:, :2]
+        valid_cmd = cmd_speed > 1e-4
+        cmd_unit = torch.where(
+            valid_cmd.unsqueeze(-1),
+            cmd_xy / torch.clamp(cmd_speed, min=1e-4).unsqueeze(-1),
+            torch.zeros_like(cmd_xy),
+        )
+        v_proj = torch.sum(robot_vel_xy * cmd_unit, dim=-1)
+        step_achieved = torch.clamp(v_proj, min=0.0) * dt
+        self.achieved_travel += step_achieved
+
+    def _update_command(self):
+        super()._update_command()
+        standing_env_ids = self.is_standing_env.nonzero(as_tuple=False).flatten()
+        if len(standing_env_ids) > 0:
+            self.vel_command_b[standing_env_ids, :] = 0.0
+
+
+@configclass
+class ZoeTerrainTwoGroupCommandCfg(UniformVelocityCommandCfg):
+    """Configuration for ZoeTerrainTwoGroupCommand."""
+
+    class_type: type = ZoeTerrainTwoGroupCommand
+
+    resampling_time_range: tuple[float, float] = (20.0, 20.0)
+    rel_standing_envs: float = 0.0
+    rel_heading_envs: float = 0.0
+    heading_command: bool = False
+
+    # Default fallback ranges for parent class init
+    ranges: UniformVelocityCommandCfg.Ranges = UniformVelocityCommandCfg.Ranges(
+        lin_vel_x=(0.10, 0.25),
+        lin_vel_y=(-0.10, 0.10),
+        ang_vel_z=(-0.30, 0.30),
+    )
+
+    # Group T (Traversal, ~50%)
+    group_t_resampling_time_range: tuple[float, float] = (20.0, 20.0)
+    group_t_ranges: UniformVelocityCommandCfg.Ranges = UniformVelocityCommandCfg.Ranges(
+        lin_vel_x=(0.10, 0.25),
+        lin_vel_y=(-0.10, 0.10),
+        ang_vel_z=(-0.30, 0.30),
+    )
+
+    # Group S (Skills, ~50%)
+    group_s_resampling_time_range: tuple[float, float] = (3.0, 5.0)
+    group_s_rel_standing_envs: float = 0.10
+    group_s_rel_yaw_envs: float = 0.30  # >= 25% yaw-dominant envs
+    group_s_yaw_dominant_wz_range: tuple[float, float] = (0.30, 0.60)
+    group_s_yaw_dominant_lin_vel_range: tuple[float, float] = (-0.05, 0.05)
+    group_s_ranges: UniformVelocityCommandCfg.Ranges = UniformVelocityCommandCfg.Ranges(
+        lin_vel_x=(-0.25, 0.30),  # backward allowed!
+        lin_vel_y=(-0.20, 0.20),
+        ang_vel_z=(-0.60, 0.60),
+    )
