@@ -8,16 +8,32 @@ Evaluates a policy checkpoint on Zoe-Hexapod-Terrain-v0 over 20.0s (1000-step) e
 with forward command 0.20 m/s and random initial headings across all 7 terrain types
 and difficulty levels [0, 2, 4, 6, 9] (>= 64 envs per terrain type; default 65 = 13 x 5).
 
-Frozen Deployment Gate (B4):
-- Target deployment levels: 0..4 (levels 0, 2, 4: slopes up to ~7 deg, steps up to ~3 cm,
-  rough and boxes in lowest half of range).
-- Pass criterion: survival >= 90.0% for EVERY terrain type across target levels 0..4.
+Frozen Deployment Gate (Part C/D):
+- Deployment target levels:
+  * stairs_up, stairs_down: levels <= 3 (steps <= 4 cm)
+  * slope_up, slope_down: levels <= 4 (slopes <= 12 deg / 0.21 rad)
+  * boxes: levels <= 4 (boxes <= 4 cm)
+  * rough: levels <= 4 (rough <= 2.5 cm)
+  * flat: levels <= 4 (all flat)
+- Pass criterion: at deployment target levels, survival >= 90.0% AND progress ratio >= 70.0%
+  in EVERY terrain type.
+- Per-cell metrics reported: survival, progress ratio, stuck fraction (<20%), torque saturation.
+
+Skill Retention Suite (Part D):
+- Evaluates flat tiles and levels 0-2 of slopes and rough:
+  1. Standing: cmd=[0, 0, 0], 5s (>= 5 feet down >= 95% of steps)
+  2. Yaw: cmd=[0, 0, 0.40], 5s (rad/s tracking)
+  3. Strafe: cmd=[0, 0.12, 0], 5s (m/s tracking)
+  4. Backward: cmd=[-0.12, 0, 0], 5s (m/s tracking)
+  5. Forward: cmd=[0.15, 0, 0], 5s (m/s tracking)
+- Compares against warm-start baseline (no metric > 10% worse).
 
 Appends summary tables to docs/CHUNK_LOG.md.
 """
 
 import argparse
 import datetime
+import json
 import math
 import os
 import subprocess
@@ -48,6 +64,9 @@ parser.add_argument(
 parser.add_argument("--cmd_vx", type=float, default=0.20, help="Forward velocity command [m/s] (default: 0.20).")
 parser.add_argument("--episode_s", type=float, default=20.0, help="Episode duration [s] (default: 20.0).")
 parser.add_argument("--label", type=str, default="", help="Optional label for CHUNK_LOG.md entry.")
+parser.add_argument("--skip_skills", action="store_true", default=False, help="Skip skill-retention tests.")
+parser.add_argument("--save_skills_json", type=str, default="", help="Path to save skill retention metrics JSON.")
+parser.add_argument("--compare_skills_json", type=str, default="", help="Path to baseline skill retention metrics JSON.")
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, _ = parser.parse_known_args()
@@ -71,24 +90,151 @@ TORQUE_SAT_THRESHOLD = ZOE_PARAMS.TORQUE_SAT_THRESHOLD_NM
 
 
 def extract_upright_roll_pitch_deg(quat_wxyz: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """Extract roll and pitch angles (in degrees) relative to the upright 180-deg X-rolled base frame.
-
-    Uses projected gravity in the robot's body frame (where upright has g_b = [0, 0, +1]):
-    pitch = asin(clamp(g_bx, -1, 1)), roll = atan2(g_by, g_bz).
-    """
+    """Extract roll and pitch angles (in degrees) relative to the upright 180-deg X-rolled base frame."""
     q_w = quat_wxyz[:, 0:1]
     q_vec = quat_wxyz[:, 1:4]
     g_w = torch.tensor([0.0, 0.0, -1.0], device=quat_wxyz.device, dtype=quat_wxyz.dtype).unsqueeze(0).expand(
         quat_wxyz.shape[0], 3
     )
-    # Inverse rotation q^* * g_w * q
     q_vec_conj = -q_vec
     a = torch.cross(q_vec_conj, g_w, dim=-1)
     g_b = g_w + 2.0 * q_w * a + 2.0 * torch.cross(q_vec_conj, a, dim=-1)
-    # In hexa_ir's inverted base_link frame, upright has g_b = (0, 0, +1)
     roll_rad = torch.atan2(g_b[:, 1], g_b[:, 2])
     pitch_rad = torch.asin(torch.clamp(g_b[:, 0], -1.0, 1.0))
     return torch.rad2deg(roll_rad), torch.rad2deg(pitch_rad)
+
+
+def run_skill_retention(env, policy, unwrapped, robot, contact_sensor, foot_ids, terrain_order, cell_terrain_idx_t, cell_level_val_t):
+    """Run skill-retention tests on flat tiles and levels 0-2 of slopes and rough (Part D)."""
+    # Select envs on flat and levels 0-2 of slope_up, slope_down, rough
+    flat_idx = terrain_order.index("flat")
+    rough_idx = terrain_order.index("rough")
+    slope_up_idx = terrain_order.index("slope_up")
+    slope_dn_idx = terrain_order.index("slope_down")
+
+    skill_mask = (
+        (cell_terrain_idx_t == flat_idx)
+        | ((cell_terrain_idx_t == rough_idx) & (cell_level_val_t <= 2))
+        | ((cell_terrain_idx_t == slope_up_idx) & (cell_level_val_t <= 2))
+        | ((cell_terrain_idx_t == slope_dn_idx) & (cell_level_val_t <= 2))
+    )
+    skill_env_indices = skill_mask.nonzero().flatten()
+    n_skill_envs = len(skill_env_indices)
+
+    if n_skill_envs == 0:
+        print("[SKILL CHECK] No matching envs for skill tests, skipping.")
+        return {}
+
+    skills = [
+        {"name": "standing", "cmd": [0.0, 0.0, 0.0], "duration_s": 5.0, "unit": "% >=5 feet down"},
+        {"name": "yaw", "cmd": [0.0, 0.0, 0.40], "duration_s": 5.0, "unit": "rad/s"},
+        {"name": "strafe", "cmd": [0.0, 0.12, 0.0], "duration_s": 5.0, "unit": "m/s"},
+        {"name": "backward", "cmd": [-0.12, 0.0, 0.0], "duration_s": 5.0, "unit": "m/s"},
+        {"name": "forward", "cmd": [0.15, 0.0, 0.0], "duration_s": 5.0, "unit": "m/s"},
+    ]
+
+    results = {}
+    terrain = unwrapped.scene.terrain
+    scanner = unwrapped.scene["height_scanner"]
+
+    print(f"\n[SKILL CHECK] Running Skill Retention Suite on {n_skill_envs} envs (flat, rough L0-2, slopes L0-2)...")
+
+    for skill in skills:
+        s_name = skill["name"]
+        cmd_val = skill["cmd"]
+        n_steps = int(round(skill["duration_s"] / unwrapped.step_dt))
+
+        # Reset robot to tile center
+        root_states = robot.data.default_root_state.clone()
+        root_states[:, 0] = terrain.env_origins[:, 0]
+        root_states[:, 1] = terrain.env_origins[:, 1]
+        root_states[:, 2] = terrain.env_origins[:, 2] + ZOE_PARAMS.STANDING_BASE_HEIGHT + 0.015
+        root_states[:, 3] = 0.0
+        root_states[:, 4] = 1.0  # zero yaw heading for standardized skill eval
+        root_states[:, 5] = 0.0
+        root_states[:, 6] = 0.0
+        root_states[:, 7:] = 0.0
+
+        robot.write_root_state_to_sim(root_states)
+        robot.write_joint_state_to_sim(robot.data.default_joint_pos.clone(), torch.zeros_like(robot.data.joint_vel))
+        unwrapped.scene.write_data_to_sim()
+        unwrapped.sim.forward()
+        scanner.update(dt=unwrapped.physics_dt, force_recompute=True)
+        h_init = height_above_ground(unwrapped, method="raycaster")
+        ground_z_init = robot.data.root_pos_w[:, 2] - h_init
+        root_states[:, 2] = ground_z_init + ZOE_PARAMS.STANDING_BASE_HEIGHT + 0.015
+        robot.write_root_state_to_sim(root_states)
+        unwrapped.scene.write_data_to_sim()
+        unwrapped.sim.forward()
+        obs = unwrapped.observation_manager.compute()
+
+        alive = torch.ones(unwrapped.num_envs, device=unwrapped.device, dtype=torch.bool)
+        feet_down_ge5_steps = torch.zeros(unwrapped.num_envs, device=unwrapped.device, dtype=torch.long)
+        vx_sum = torch.zeros(unwrapped.num_envs, device=unwrapped.device, dtype=torch.float32)
+        vy_sum = torch.zeros(unwrapped.num_envs, device=unwrapped.device, dtype=torch.float32)
+        wz_sum = torch.zeros(unwrapped.num_envs, device=unwrapped.device, dtype=torch.float32)
+        active_steps = torch.zeros(unwrapped.num_envs, device=unwrapped.device, dtype=torch.long)
+
+        with torch.no_grad():
+            for step in range(n_steps):
+                cmd = unwrapped.command_manager.get_command("base_velocity")
+                cmd[:, 0] = cmd_val[0]
+                cmd[:, 1] = cmd_val[1]
+                cmd[:, 2] = cmd_val[2]
+
+                actions = policy(obs)
+
+                # Pre-step state measurements for alive skill envs
+                forces_z = contact_sensor.data.net_forces_w[:, foot_ids, 2]
+                f_down = (forces_z > 1.0).sum(dim=1)
+                feet_down_ge5_steps += (alive & (f_down >= 5)).long()
+
+                r_vx = robot.data.root_lin_vel_b[:, 0]
+                r_vy = robot.data.root_lin_vel_b[:, 1]
+                r_wz = robot.data.root_ang_vel_b[:, 2]
+
+                vx_sum += torch.where(alive, r_vx, torch.zeros_like(r_vx))
+                vy_sum += torch.where(alive, r_vy, torch.zeros_like(r_vy))
+                wz_sum += torch.where(alive, r_wz, torch.zeros_like(r_wz))
+                active_steps += alive.long()
+
+                step_res = env.step(actions)
+                obs = step_res[0]
+
+                tm = unwrapped.termination_manager
+                newly_term = alive & tm.terminated & (~tm.time_outs)
+                alive = alive & (~newly_term)
+
+        # Compute skill score over skill_mask
+        tot_active = active_steps[skill_mask].sum().clamp(min=1).item()
+        surv_pct = 100.0 * alive[skill_mask].float().mean().item()
+
+        if s_name == "standing":
+            score = 100.0 * feet_down_ge5_steps[skill_mask].sum().item() / tot_active
+            pass_gate = score >= 95.0
+        elif s_name == "yaw":
+            score = wz_sum[skill_mask].sum().item() / tot_active
+            pass_gate = abs(score) >= 0.30  # tracking 0.40
+        elif s_name == "strafe":
+            score = vy_sum[skill_mask].sum().item() / tot_active
+            pass_gate = score >= 0.08  # tracking 0.12
+        elif s_name == "backward":
+            score = vx_sum[skill_mask].sum().item() / tot_active
+            pass_gate = score <= -0.08  # tracking -0.12
+        elif s_name == "forward":
+            score = vx_sum[skill_mask].sum().item() / tot_active
+            pass_gate = score >= 0.10  # tracking 0.15
+
+        results[s_name] = {
+            "score": score,
+            "unit": skill["unit"],
+            "survival_pct": surv_pct,
+            "pass_gate": pass_gate,
+            "target": cmd_val,
+        }
+        print(f"  - Skill: {s_name:<10} | Score: {score:+.3f} {skill['unit']:<18} | Survival: {surv_pct:.1f}%")
+
+    return results
 
 
 def run_terrain_check():
@@ -109,7 +255,8 @@ def run_terrain_check():
     total_envs = num_terrains * envs_per_terrain
 
     print(f"\n[TERRAIN CHECK] Checkpoint      : {ckpt_path}")
-    print(f"[TERRAIN CHECK] Levels          : {levels} (Frozen Gate Target: levels <= 4)")
+    print(f"[TERRAIN CHECK] Levels          : {levels}")
+    print(f"[TERRAIN CHECK] Target Levels   : stairs <= 3, others <= 4 (Frozen Gate)")
     print(f"[TERRAIN CHECK] Envs per terrain: {envs_per_terrain} ({envs_per_cell} per level x {num_levels} levels)")
     print(f"[TERRAIN CHECK] Total Envs      : {total_envs}, Episode: {args_cli.episode_s:.1f}s, Command: {args_cli.cmd_vx:.2f} m/s")
 
@@ -121,7 +268,6 @@ def run_terrain_check():
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=total_envs)
     if hasattr(env_cfg.events, "push_robot"):
         env_cfg.events.push_robot = None
-    # Disable curriculum transitions during evaluation so env_origins stay fixed to the assigned tile
     if hasattr(env_cfg, "curriculum") and hasattr(env_cfg.curriculum, "terrain_levels"):
         env_cfg.curriculum.terrain_levels = None
 
@@ -214,6 +360,10 @@ def run_terrain_check():
     non_foot_steps = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.long)
     torque_sat_joint_steps = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.long)
 
+    # Progress accounting buffers (Part A/D)
+    commanded_travel = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.float32)
+    achieved_travel = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.float32)
+
     term_bad_ori = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.bool)
     term_base_contact = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.bool)
     term_nan = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.bool)
@@ -223,6 +373,8 @@ def run_terrain_check():
     )
     slope_rolls = []
     slope_pitches = []
+
+    dt = float(unwrapped.step_dt)
 
     with torch.no_grad():
         for step in range(num_steps):
@@ -240,6 +392,22 @@ def run_terrain_check():
             off_platform_steps += (alive & (dist_xy > 1.20)).long()
             active_steps += alive.long()
 
+            # Step progress accounting
+            cmd_xy = cmd[:, :2]
+            cmd_speed = torch.norm(cmd_xy, dim=-1)
+            commanded_travel += torch.where(alive, cmd_speed * dt, torch.zeros_like(cmd_speed))
+
+            robot_vel_xy = robot.data.root_lin_vel_b[:, :2]
+            valid_cmd = cmd_speed > 1e-4
+            cmd_unit = torch.where(
+                valid_cmd.unsqueeze(-1),
+                cmd_xy / torch.clamp(cmd_speed, min=1e-4).unsqueeze(-1),
+                torch.zeros_like(cmd_xy),
+            )
+            v_proj = torch.sum(robot_vel_xy * cmd_unit, dim=-1)
+            step_achieved = torch.clamp(v_proj, min=0.0) * dt
+            achieved_travel += torch.where(alive, step_achieved, torch.zeros_like(step_achieved))
+
             forces_z = contact_sensor.data.net_forces_w[:, foot_ids, 2]
             f_down = (forces_z > 1.0).float().sum(dim=1)
             feet_down_sum += torch.where(alive, f_down, torch.zeros_like(f_down))
@@ -253,7 +421,6 @@ def run_terrain_check():
             t_sat = (torques >= TORQUE_SAT_THRESHOLD).sum(dim=1)
             torque_sat_joint_steps += torch.where(alive, t_sat, torch.zeros_like(t_sat))
 
-            # Collect roll/pitch on slope tiles every 5 steps for alive envs
             if step % 5 == 0:
                 alive_slopes = alive & slope_mask
                 if alive_slopes.any():
@@ -264,7 +431,6 @@ def run_terrain_check():
             step_res = env.step(actions)
             obs = step_res[0]
 
-            # Check termination terms on this step for alive envs
             tm = unwrapped.termination_manager
             newly_terminated = alive & tm.terminated & (~tm.time_outs)
             if newly_terminated.any():
@@ -285,6 +451,10 @@ def run_terrain_check():
                     pass
                 alive = alive & (~newly_terminated)
 
+    safe_cmd = torch.clamp(commanded_travel, min=1e-4)
+    progress_ratio = torch.where(commanded_travel >= 0.50, achieved_travel / safe_cmd, torch.zeros_like(achieved_travel))
+    is_stuck = alive & (progress_ratio < 0.20)  # progress ratio < 20% while alive
+
     # Aggregate per (terrain_type, level)
     cell_rows = []
     for t_idx, t_name in enumerate(terrain_order):
@@ -294,6 +464,8 @@ def run_terrain_check():
             surv_rate = 100.0 * alive[mask].float().mean().item()
             mean_final_d = final_dist[mask].mean().item()
             mean_max_d = max_dist[mask].mean().item()
+            mean_prog_ratio = 100.0 * progress_ratio[mask].mean().item()
+            stuck_rate = 100.0 * is_stuck[mask].float().mean().item()
             tot_steps_cell = active_steps[mask].sum().clamp(min=1).item()
             off_plat_pct = 100.0 * off_platform_steps[mask].sum().item() / tot_steps_cell
             mean_fd = feet_down_sum[mask].sum().item() / tot_steps_cell
@@ -307,6 +479,8 @@ def run_terrain_check():
                 "level": lvl,
                 "n": n_cell,
                 "survival_pct": surv_rate,
+                "progress_ratio_pct": mean_prog_ratio,
+                "stuck_pct": stuck_rate,
                 "final_dist_m": mean_final_d,
                 "max_dist_m": mean_max_d,
                 "off_plat_pct": off_plat_pct,
@@ -318,16 +492,24 @@ def run_terrain_check():
                 "nan": n_nan,
             })
 
-    # Aggregate per terrain type (overall and target levels 0..4)
+    # Aggregate per terrain type (overall and deployment target levels)
+    # Target levels: stairs_up/down <= 3, other terrains <= 4
     summary_rows = []
     for t_idx, t_name in enumerate(terrain_order):
         mask_all = cell_terrain_idx_t == t_idx
-        mask_target = mask_all & (cell_level_val_t <= 4)
+        target_lvl_cap = 3 if "stairs" in t_name else 4
+        mask_target = mask_all & (cell_level_val_t <= target_lvl_cap)
         mask_l02 = mask_all & (cell_level_val_t <= 2)
 
         surv_all = 100.0 * alive[mask_all].float().mean().item()
         surv_target = 100.0 * alive[mask_target].float().mean().item() if mask_target.any() else surv_all
         surv_l02 = 100.0 * alive[mask_l02].float().mean().item() if mask_l02.any() else surv_all
+
+        prog_all = 100.0 * progress_ratio[mask_all].mean().item()
+        prog_target = 100.0 * progress_ratio[mask_target].mean().item() if mask_target.any() else prog_all
+
+        stuck_all = 100.0 * is_stuck[mask_all].float().mean().item()
+        stuck_target = 100.0 * is_stuck[mask_target].float().mean().item() if mask_target.any() else stuck_all
 
         tot_steps_t = active_steps[mask_all].sum().clamp(min=1).item()
         dist_all = final_dist[mask_all].mean().item()
@@ -339,11 +521,19 @@ def run_terrain_check():
         n_bo = term_bad_ori[mask_all].sum().item()
         n_bc = term_base_contact[mask_all].sum().item()
 
+        # Gate criterion: Target level survival >= 90% AND progress ratio >= 70%
+        pass_target = (surv_target >= 90.0) and (prog_target >= 70.0)
+
         summary_rows.append({
             "terrain": t_name,
+            "target_level_cap": target_lvl_cap,
             "surv_l02": surv_l02,
-            "surv_target_0_4": surv_target,
+            "surv_target": surv_target,
             "surv_all": surv_all,
+            "prog_target": prog_target,
+            "prog_all": prog_all,
+            "stuck_target": stuck_target,
+            "stuck_all": stuck_all,
             "dist_target_m": dist_target,
             "dist_all_m": dist_all,
             "off_plat_pct": off_plat_t,
@@ -352,40 +542,62 @@ def run_terrain_check():
             "torque_sat_pct": tsat_t,
             "bad_ori": n_bo,
             "base_contact": n_bc,
-            "pass_target": surv_target >= 90.0,
+            "pass_target": pass_target,
             "pass_probe_l02": surv_l02 >= 50.0,
         })
 
+    # Run Skill Retention Suite (Part D)
+    skills_results = {}
+    if not args_cli.skip_skills:
+        skills_results = run_skill_retention(
+            env, policy, unwrapped, robot, contact_sensor, foot_ids, terrain_order, cell_terrain_idx_t, cell_level_val_t
+        )
+
     # Format Markdown tables
     sum_header = (
-        "| Terrain Type | L0-2 Survival | Target L0-4 Survival (Gate >=90%) | All-Level Survival | "
-        "Dist Walked L0-4 (m) | Dist Walked All (m) | Off-Platform (>1.2m) | Mean Feet Down | "
-        "Non-Foot Contact | Torque Sat | Terminations (ori/base) | Gate L0-4 |"
+        "| Terrain Type | Target Lvl | Target Surv (>=90%) | Target Prog (>=70%) | Target Stuck (<20%) | "
+        "All Surv | All Prog | Torque Sat | Non-Foot | Term (ori/base) | Gate Target |"
     )
-    sum_sep = "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|"
+    sum_sep = "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|"
     sum_lines = [sum_header, sum_sep]
     for r in summary_rows:
         gate_str = "**PASS**" if r["pass_target"] else "**FAIL**"
         sum_lines.append(
-            f"| `{r['terrain']}` | `{r['surv_l02']:.1f}%` | **`{r['surv_target_0_4']:.1f}%`** | `{r['surv_all']:.1f}%` | "
-            f"`{r['dist_target_m']:.2f}` | `{r['dist_all_m']:.2f}` | `{r['off_plat_pct']:.1f}%` | `{r['feet_down']:.2f}` | "
-            f"`{r['non_foot_pct']:.2f}%` | `{r['torque_sat_pct']:.2f}%` | `{r['bad_ori']} / {r['base_contact']}` | {gate_str} |"
+            f"| `{r['terrain']}` | L0-{r['target_level_cap']} | **`{r['surv_target']:.1f}%`** | **`{r['prog_target']:.1f}%`** | "
+            f"`{r['stuck_target']:.1f}%` | `{r['surv_all']:.1f}%` | `{r['prog_all']:.1f}%` | `{r['torque_sat_pct']:.2f}%` | "
+            f"`{r['non_foot_pct']:.2f}%` | `{r['bad_ori']} / {r['base_contact']}` | {gate_str} |"
         )
     summary_table_md = "\n".join(sum_lines)
 
     cell_header = (
-        "| Terrain | Level | Survival | Final Dist (m) | Max Dist (m) | Off-Plat (>1.2m) | "
-        "Feet Down | Non-Foot | Torque Sat | Term (ori/base) |"
+        "| Terrain | Level | Survival | Progress Ratio | Stuck (<20%) | Final Dist (m) | "
+        "Off-Plat (>1.2m) | Feet Down | Non-Foot | Torque Sat | Term (ori/base) |"
     )
-    cell_sep = "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|"
+    cell_sep = "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"
     cell_lines = [cell_header, cell_sep]
     for r in cell_rows:
         cell_lines.append(
-            f"| `{r['terrain']}` | {r['level']} | `{r['survival_pct']:.1f}%` | `{r['final_dist_m']:.2f}` | "
-            f"`{r['max_dist_m']:.2f}` | `{r['off_plat_pct']:.1f}%` | `{r['feet_down']:.2f}` | "
+            f"| `{r['terrain']}` | {r['level']} | `{r['survival_pct']:.1f}%` | `{r['progress_ratio_pct']:.1f}%` | "
+            f"`{r['stuck_pct']:.1f}%` | `{r['final_dist_m']:.2f}` | `{r['off_plat_pct']:.1f}%` | `{r['feet_down']:.2f}` | "
             f"`{r['non_foot_pct']:.2f}%` | `{r['torque_sat_pct']:.2f}%` | `{r['bad_ori']}/{r['base_contact']}` |"
         )
     cell_table_md = "\n".join(cell_lines)
+
+    # Format Skill Retention Table
+    skills_lines = []
+    if skills_results:
+        skills_header = "| Skill | Command Target | Achieved / Score | Survival | Gate Threshold | Result |"
+        skills_sep = "|---|---|---:|---:|---|---|"
+        skills_lines = [skills_header, skills_sep]
+        for s_k, s_v in skills_results.items():
+            res_str = "**PASS**" if s_v["pass_gate"] else "**FAIL**"
+            cmd_repr = str(s_v["target"])
+            score_repr = f"{s_v['score']:+.3f} {s_v['unit']}"
+            thresh_repr = ">= 95%" if s_k == "standing" else "tracking >= 0.08-0.30"
+            skills_lines.append(
+                f"| `{s_k}` | `{cmd_repr}` | `{score_repr}` | `{s_v['survival_pct']:.1f}%` | `{thresh_repr}` | {res_str} |"
+            )
+    skills_table_md = "\n".join(skills_lines) if skills_lines else "Skipped"
 
     # Slope Roll/Pitch summary (A6)
     if slope_rolls:
@@ -404,6 +616,7 @@ def run_terrain_check():
 
     all_target_pass = all(r["pass_target"] for r in summary_rows)
     all_probe_l02_pass = all(r["pass_probe_l02"] for r in summary_rows)
+    all_skills_pass = all(s_v["pass_gate"] for s_v in skills_results.values()) if skills_results else True
     verdict_str = "PASS" if all_target_pass else "FAIL"
     elapsed = time.time() - t0_gpu
 
@@ -415,11 +628,26 @@ def run_terrain_check():
     print("                        PER-LEVEL TRAVERSAL BREAKDOWN (LEVELS 0, 2, 4, 6, 9)")
     print("=" * 120)
     print(cell_table_md)
+    if skills_results:
+        print("\n" + "=" * 120)
+        print("                           SKILL RETENTION SUITE (PART D)")
+        print("=" * 120)
+        print(skills_table_md)
     print("-" * 120)
     print(f"SLOPE ORIENTATION DISTRIBUTION (A6): {slope_ori_str}")
     print(f"B3 PROBE L0-2 SURVIVAL >= 50% CHECK: {'PASS' if all_probe_l02_pass else 'FAIL'}")
-    print(f"B4 DEPLOYMENT TARGET (L0-4 >= 90%) : {verdict_str} (Elapsed GPU time: {elapsed:.1f}s)")
+    print(f"B4 DEPLOYMENT TARGET (Surv>=90%, Prog>=70%): {verdict_str}")
+    if skills_results:
+        print(f"SKILL RETENTION GATE CHECK         : {'PASS' if all_skills_pass else 'FAIL'}")
+    print(f"Elapsed GPU time: {elapsed:.1f}s")
     print("=" * 120 + "\n")
+
+    # Optional save skills JSON
+    if args_cli.save_skills_json and skills_results:
+        os.makedirs(os.path.dirname(os.path.abspath(args_cli.save_skills_json)), exist_ok=True)
+        with open(args_cli.save_skills_json, "w") as f:
+            json.dump(skills_results, f, indent=2)
+        print(f"[SKILL CHECK] Saved skill retention metrics to {args_cli.save_skills_json}")
 
     # Append to docs/CHUNK_LOG.md
     log_path = "docs/CHUNK_LOG.md"
@@ -427,16 +655,19 @@ def run_terrain_check():
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     label_suffix = f" ({args_cli.label})" if args_cli.label else ""
     log_entry = f"""
-## Stage 2 Terrain Check Run - {timestamp}{label_suffix}
+## Stage 2 Terrain & Skills Check - {timestamp}{label_suffix}
 - **Git Commit**: `{git_hash}`
 - **Checkpoint**: `{ckpt_path}`
 - **Command**: `{args_cli.cmd_vx:.2f} m/s` forward, random headings, `{args_cli.episode_s:.1f}s` (`{num_steps}` steps), `{envs_per_terrain}` envs/terrain (`{total_envs}` total)
-- **B3 Probe Criterion (All Terrains L0-2 Survival >= 50%)**: **{"PASS" if all_probe_l02_pass else "FAIL"}**
-- **B4 Deployment Gate Verdict (All Terrains L0-4 Survival >= 90%)**: **{verdict_str}**
+- **Deployment Gate Verdict (Surv >= 90%, Prog >= 70%)**: **{verdict_str}**
+- **Skill Retention Verdict**: **{"PASS" if all_skills_pass else "FAIL"}**
 - **Slope Roll/Pitch Distribution (A6)**: `{slope_ori_str}`
 
 ### Summary by Terrain Type
 {summary_table_md}
+
+### Skill Retention Suite
+{skills_table_md}
 
 <details>
 <summary>Per-Level Traversal Breakdown (Levels {args_cli.levels})</summary>
@@ -458,4 +689,3 @@ def run_terrain_check():
 
 if __name__ == "__main__":
     run_terrain_check()
-
