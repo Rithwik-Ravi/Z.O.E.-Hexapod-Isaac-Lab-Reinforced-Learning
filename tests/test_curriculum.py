@@ -14,6 +14,7 @@ Verifies:
 6. Extras logging: mean level, promotion, demotion, survival, progress_ratio per terrain type.
 """
 
+import math
 import pytest
 import torch
 from spdrbot3.tasks.manager_based.zoe_deploy.mdp.curriculum import (
@@ -93,35 +94,110 @@ def test_curriculum_standing_envs_no_decision():
     assert torch.equal(move_down, torch.tensor([False, False, True, False, True]))
 
 
-def test_curriculum_command_reversals():
-    """Verify that command reversals (forward then backward) work with step-integrated accounting.
+def test_net_displacement_oscillating_robot_gives_zero_progress():
+    """Verify that an oscillating robot (e.g. creeper rocking back and forth) gives ~0 progress.
 
     Scenario:
-    - Steps 0-250 (5s): commanded +0.20 m/s vx -> commanded travel = 1.0 m, robot walks +0.95 m
-    - Steps 250-500 (5s): commanded -0.20 m/s vx -> commanded travel = 1.0 m, robot walks -0.95 m
-    Total commanded travel = 2.0 m
-    Step-integrated achieved travel along command direction:
-      sum max(0, v_xy . unit(cmd_xy)) dt = 0.95 + 0.95 = 1.90 m
-    progress_ratio = 1.90 / 2.0 = 0.95 >= 0.75
-    Net displacement from origin: |0.95 - 0.95| = 0.0 m (displacement metric would fail!)
+    - Commanded forward at 0.20 m/s for 10s (500 steps, dt=0.02s) -> commanded travel = 2.0 m
+    - Robot rocks back and forth: x(t) = 0.05 * sin(2 * pi * t / 2.0)
+    - Old step-integrated metric: sum max(0, v) dt accumulated all forward halves -> inflated ~0.50m!
+    - New net displacement metric: actual displacement at end = 0.0m -> progress = 0.0 / 2.0 = 0.0!
+    - Curriculum must DEMOTE (ratio 0.0 < 0.35 with commanded travel 2.0m >= 0.5m).
     """
-    cmd_travel = 2.0
-    ach_travel = 1.90  # step-integrated
-    net_origin_disp = 0.0  # old flawed metric
+    dt = 0.02
+    num_steps = 500
+    times = torch.linspace(0, num_steps * dt, num_steps)
+    v_cmd = 0.20
 
-    # Old flawed metric would demote (0.0 < 0.35 * 2.0)
-    move_up_old, move_down_old = compute_curriculum_step(
-        commanded_travel=cmd_travel, achieved_travel=net_origin_disp, was_terminated_early=False
-    )
-    assert move_up_old is False
-    assert move_down_old is True  # FAILED with old metric!
+    # Old step-integrated calculation
+    vx_robot = 0.05 * (2 * 3.14159 / 2.0) * torch.cos(2 * 3.14159 * times / 2.0)
+    old_achieved = torch.sum(torch.clamp(vx_robot, min=0.0)) * dt
+    old_ratio = (old_achieved / (v_cmd * num_steps * dt)).item()
+    # Old metric gave inflated positive progress
+    assert old_ratio > 0.15, f"Expected old metric to be inflated, got {old_ratio}"
 
-    # New step-integrated progress accounting correctly promotes
-    move_up_new, move_down_new = compute_curriculum_step(
-        commanded_travel=cmd_travel, achieved_travel=ach_travel, was_terminated_early=False
+    # New net displacement in world frame
+    cmd_disp_w = torch.tensor([v_cmd * num_steps * dt, 0.0])  # [2.0, 0.0]
+    cmd_norm = torch.norm(cmd_disp_w).item()
+    assert abs(cmd_norm - 2.0) < 1e-4
+
+    # Robot actual position at end of oscillation
+    pos_start_w = torch.tensor([0.0, 0.0])
+    pos_end_w = torch.tensor([0.05 * math.sin(2 * 3.14159 * (num_steps * dt) / 2.0), 0.0])
+    actual_disp_w = pos_end_w - pos_start_w
+
+    cmd_unit_w = cmd_disp_w / cmd_norm
+    new_achieved = torch.dot(actual_disp_w, cmd_unit_w).item()
+    new_progress = new_achieved / cmd_norm
+
+    # New metric strictly reflects zero net progress
+    assert abs(new_progress) < 0.01, f"Expected ~0 net progress, got {new_progress}"
+
+    # Curriculum demotes the oscillating creeper
+    move_up, move_down = compute_curriculum_step(
+        commanded_travel=cmd_norm, achieved_travel=new_achieved, was_terminated_early=False
     )
-    assert move_up_new is True
-    assert move_down_new is False
+    assert move_up is False
+    assert move_down is True, "Oscillating robot must be demoted!"
+
+
+def test_net_displacement_changing_commands():
+    """Verify that net displacement progress correctly handles changing / multi-directional commands.
+
+    Scenario:
+    - Phase 1 (5s): commanded +0.20 m/s along X -> cmd_disp = [1.0, 0.0]
+    - Phase 2 (5s): commanded +0.20 m/s along Y -> cmd_disp = [1.0, 1.0]
+    Total commanded displacement = [1.0, 1.0], magnitude = sqrt(2) = 1.4142 m
+    Robot tracks well: actual end position = [0.95, 0.95]
+    Progress = ([0.95, 0.95] . [1/sqrt(2), 1/sqrt(2)]) / sqrt(2) = 0.95 >= 0.75 -> promote!
+    """
+    cmd_disp_w = torch.tensor([1.0, 1.0])
+    cmd_norm = torch.norm(cmd_disp_w).item()
+    cmd_unit_w = cmd_disp_w / cmd_norm
+
+    actual_disp_w = torch.tensor([0.95, 0.95])
+    achieved = torch.dot(actual_disp_w, cmd_unit_w).item()
+    progress = achieved / cmd_norm
+
+    assert abs(progress - 0.95) < 1e-4
+
+    move_up, move_down = compute_curriculum_step(
+        commanded_travel=cmd_norm, achieved_travel=achieved, was_terminated_early=False
+    )
+    assert move_up is True
+    assert move_down is False
+
+
+def test_net_displacement_command_reversals():
+    """Verify net displacement behavior under forward then backward commands.
+
+    Case A: Command 1.0m forward (+X) then 0.4m backward (-X).
+    Net commanded displacement = 0.6m >= 0.5m.
+    Robot reaches 0.57m -> progress = 0.57 / 0.6 = 0.95 >= 0.75 -> promote!
+
+    Case B: Command 1.0m forward (+X) then 1.0m backward (-X).
+    Net commanded displacement = 0.0m < 0.5m -> no decision (keep level).
+    """
+    # Case A: Partial reversal
+    cmd_disp_a = torch.tensor([0.60, 0.0])
+    cmd_norm_a = torch.norm(cmd_disp_a).item()
+    actual_disp_a = torch.tensor([0.57, 0.0])
+    achieved_a = torch.dot(actual_disp_a, cmd_disp_a / cmd_norm_a).item()
+
+    move_up_a, move_down_a = compute_curriculum_step(
+        commanded_travel=cmd_norm_a, achieved_travel=achieved_a, was_terminated_early=False
+    )
+    assert move_up_a is True
+    assert move_down_a is False
+
+    # Case B: Complete reversal (net 0 commanded)
+    cmd_norm_b = 0.0
+    actual_b = 0.0
+    move_up_b, move_down_b = compute_curriculum_step(
+        commanded_travel=cmd_norm_b, achieved_travel=actual_b, was_terminated_early=False
+    )
+    assert move_up_b is False
+    assert move_down_b is False  # No decision below 0.5m commanded!
 
 
 def test_zoe_terrain_curriculum_far_from_world_origin_clamping_and_logging():

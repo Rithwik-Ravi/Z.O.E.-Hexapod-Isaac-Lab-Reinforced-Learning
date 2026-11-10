@@ -99,11 +99,17 @@ class ZoeTerrainTwoGroupCommand(UniformVelocityCommand):
         self.is_group_s = (torch.arange(self.num_envs, device=self.device) % 2 == 1)
         self._env.is_group_s = self.is_group_s
 
-        # Buffers for step-integrated progress accounting (Part A)
+        # Buffers for world-frame net displacement progress accounting (Task 6)
+        self.cmd_disp_w = torch.zeros((self.num_envs, 2), device=self.device, dtype=torch.float32)
+        self.pos_start_w = torch.zeros((self.num_envs, 2), device=self.device, dtype=torch.float32)
+        self._pos_start_initialized = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+
         self.commanded_travel = torch.zeros(self.num_envs, device=self.device, dtype=torch.float32)
         self.achieved_travel = torch.zeros(self.num_envs, device=self.device, dtype=torch.float32)
+        self.progress_ratio = torch.zeros(self.num_envs, device=self.device, dtype=torch.float32)
         self._env.commanded_travel = self.commanded_travel
         self._env.achieved_travel = self.achieved_travel
+        self._env.progress_ratio = self.progress_ratio
 
         # Confirm group sizes at runtime
         n_s = self.is_group_s.sum().item()
@@ -119,8 +125,13 @@ class ZoeTerrainTwoGroupCommand(UniformVelocityCommand):
             env_ids = slice(None)
         # Note: curriculum was evaluated before reset in ManagerBasedRLEnv.reset(),
         # so commanded_travel and achieved_travel have already been consumed.
+        self.cmd_disp_w[env_ids] = 0.0
         self.commanded_travel[env_ids] = 0.0
         self.achieved_travel[env_ids] = 0.0
+        self.progress_ratio[env_ids] = 0.0
+        if hasattr(self.robot, "data") and hasattr(self.robot.data, "root_pos_w"):
+            self.pos_start_w[env_ids] = self.robot.data.root_pos_w[env_ids, :2].clone()
+            self._pos_start_initialized[env_ids] = True
         return super().reset(env_ids)
 
     def _resample(self, env_ids: Sequence[int]):
@@ -219,21 +230,44 @@ class ZoeTerrainTwoGroupCommand(UniformVelocityCommand):
 
     def _update_metrics(self):
         super()._update_metrics()
-        cmd_xy = self.vel_command_b[:, :2]
-        cmd_speed = torch.norm(cmd_xy, dim=-1)
-        dt = float(self._env.step_dt)
-        self.commanded_travel += cmd_speed * dt
+        # Initialize start position if not initialized
+        if hasattr(self.robot, "data") and hasattr(self.robot.data, "root_pos_w"):
+            if not self._pos_start_initialized.all():
+                uninit = ~self._pos_start_initialized
+                self.pos_start_w[uninit] = self.robot.data.root_pos_w[uninit, :2].clone()
+                self._pos_start_initialized[uninit] = True
 
-        robot_vel_xy = self.robot.data.root_lin_vel_b[:, :2]
-        valid_cmd = cmd_speed > 1e-4
-        cmd_unit = torch.where(
-            valid_cmd.unsqueeze(-1),
-            cmd_xy / torch.clamp(cmd_speed, min=1e-4).unsqueeze(-1),
-            torch.zeros_like(cmd_xy),
+        dt = float(self._env.step_dt)
+        # 1. Integrate commanded displacement vector in world frame: R(yaw_t) @ cmd_b
+        yaw = self.robot.data.heading_w
+        cos_yaw = torch.cos(yaw)
+        sin_yaw = torch.sin(yaw)
+        vx_b = self.vel_command_b[:, 0]
+        vy_b = self.vel_command_b[:, 1]
+        cmd_w_x = cos_yaw * vx_b - sin_yaw * vy_b
+        cmd_w_y = sin_yaw * vx_b + cos_yaw * vy_b
+
+        self.cmd_disp_w[:, 0] += cmd_w_x * dt
+        self.cmd_disp_w[:, 1] += cmd_w_y * dt
+
+        # 2. Commanded travel magnitude: D_cmd = ||cmd_disp_w||
+        cmd_norm = torch.norm(self.cmd_disp_w, dim=-1)
+        self.commanded_travel[:] = cmd_norm
+
+        # 3. Actual net displacement from reset position in world frame
+        actual_disp_w = self.robot.data.root_pos_w[:, :2] - self.pos_start_w
+
+        # 4. Projected net displacement along unit commanded vector: progress = (actual . unit(cmd)) / |cmd|
+        safe_cmd_norm = torch.clamp(cmd_norm, min=1e-4)
+        cmd_unit_w = self.cmd_disp_w / safe_cmd_norm.unsqueeze(-1)
+        achieved = torch.sum(actual_disp_w * cmd_unit_w, dim=-1)
+        self.achieved_travel[:] = achieved
+
+        self.progress_ratio[:] = torch.where(
+            cmd_norm >= 1e-4,
+            achieved / safe_cmd_norm,
+            torch.zeros_like(achieved),
         )
-        v_proj = torch.sum(robot_vel_xy * cmd_unit, dim=-1)
-        step_achieved = torch.clamp(v_proj, min=0.0) * dt
-        self.achieved_travel += step_achieved
 
     def _update_command(self):
         super()._update_command()

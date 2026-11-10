@@ -360,9 +360,13 @@ def run_terrain_check():
     non_foot_steps = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.long)
     torque_sat_joint_steps = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.long)
 
-    # Progress accounting buffers (Part A/D)
+    # Progress accounting buffers: net displacement in world frame (Task 6)
+    pos_start_w = robot.data.root_pos_w[:, :2].clone()
+    cmd_disp_w = torch.zeros((total_envs, 2), device=unwrapped.device, dtype=torch.float32)
     commanded_travel = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.float32)
     achieved_travel = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.float32)
+    old_commanded_travel = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.float32)
+    old_achieved_travel = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.float32)
 
     term_bad_ori = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.bool)
     term_base_contact = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.bool)
@@ -392,11 +396,21 @@ def run_terrain_check():
             off_platform_steps += (alive & (dist_xy > 1.20)).long()
             active_steps += alive.long()
 
-            # Step progress accounting
+            # World-frame commanded displacement vector integration (Task 6)
+            yaw = robot.data.heading_w
+            cos_yaw = torch.cos(yaw)
+            sin_yaw = torch.sin(yaw)
+            vx_b = cmd[:, 0]
+            vy_b = cmd[:, 1]
+            cmd_w_x = cos_yaw * vx_b - sin_yaw * vy_b
+            cmd_w_y = sin_yaw * vx_b + cos_yaw * vy_b
+            cmd_disp_w[:, 0] += torch.where(alive, cmd_w_x * dt, torch.zeros_like(cmd_w_x))
+            cmd_disp_w[:, 1] += torch.where(alive, cmd_w_y * dt, torch.zeros_like(cmd_w_y))
+
+            # Old step-integrated progress tracking (for OLD vs NEW comparison)
             cmd_xy = cmd[:, :2]
             cmd_speed = torch.norm(cmd_xy, dim=-1)
-            commanded_travel += torch.where(alive, cmd_speed * dt, torch.zeros_like(cmd_speed))
-
+            old_commanded_travel += torch.where(alive, cmd_speed * dt, torch.zeros_like(cmd_speed))
             robot_vel_xy = robot.data.root_lin_vel_b[:, :2]
             valid_cmd = cmd_speed > 1e-4
             cmd_unit = torch.where(
@@ -405,8 +419,7 @@ def run_terrain_check():
                 torch.zeros_like(cmd_xy),
             )
             v_proj = torch.sum(robot_vel_xy * cmd_unit, dim=-1)
-            step_achieved = torch.clamp(v_proj, min=0.0) * dt
-            achieved_travel += torch.where(alive, step_achieved, torch.zeros_like(step_achieved))
+            old_achieved_travel += torch.where(alive, torch.clamp(v_proj, min=0.0) * dt, torch.zeros_like(v_proj))
 
             forces_z = contact_sensor.data.net_forces_w[:, foot_ids, 2]
             f_down = (forces_z > 1.0).float().sum(dim=1)
@@ -451,9 +464,18 @@ def run_terrain_check():
                     pass
                 alive = alive & (~newly_terminated)
 
+    cmd_norm = torch.norm(cmd_disp_w, dim=-1)
+    commanded_travel = cmd_norm
+    actual_disp_w = robot.data.root_pos_w[:, :2] - pos_start_w
     safe_cmd = torch.clamp(commanded_travel, min=1e-4)
+    cmd_unit_w = cmd_disp_w / safe_cmd.unsqueeze(-1)
+    achieved_travel = torch.sum(actual_disp_w * cmd_unit_w, dim=-1)
     progress_ratio = torch.where(commanded_travel >= 0.50, achieved_travel / safe_cmd, torch.zeros_like(achieved_travel))
     is_stuck = alive & (progress_ratio < 0.20)  # progress ratio < 20% while alive
+
+    # Old step-integrated progress ratio (for OLD vs NEW comparison)
+    old_safe_cmd = torch.clamp(old_commanded_travel, min=1e-4)
+    old_progress_ratio = torch.where(old_commanded_travel >= 0.50, old_achieved_travel / old_safe_cmd, torch.zeros_like(old_achieved_travel))
 
     # Aggregate per (terrain_type, level)
     cell_rows = []
@@ -507,6 +529,8 @@ def run_terrain_check():
 
         prog_all = 100.0 * progress_ratio[mask_all].mean().item()
         prog_target = 100.0 * progress_ratio[mask_target].mean().item() if mask_target.any() else prog_all
+        old_prog_all = 100.0 * old_progress_ratio[mask_all].mean().item()
+        old_prog_target = 100.0 * old_progress_ratio[mask_target].mean().item() if mask_target.any() else old_prog_all
 
         stuck_all = 100.0 * is_stuck[mask_all].float().mean().item()
         stuck_target = 100.0 * is_stuck[mask_target].float().mean().item() if mask_target.any() else stuck_all
@@ -532,6 +556,8 @@ def run_terrain_check():
             "surv_all": surv_all,
             "prog_target": prog_target,
             "prog_all": prog_all,
+            "old_prog_target": old_prog_target,
+            "old_prog_all": old_prog_all,
             "stuck_target": stuck_target,
             "stuck_all": stuck_all,
             "dist_target_m": dist_target,
@@ -555,16 +581,16 @@ def run_terrain_check():
 
     # Format Markdown tables
     sum_header = (
-        "| Terrain Type | Target Lvl | Target Surv (>=90%) | Target Prog (>=70%) | Target Stuck (<20%) | "
-        "All Surv | All Prog | Torque Sat | Non-Foot | Term (ori/base) | Gate Target |"
+        "| Terrain Type | Target Lvl | Target Surv (>=90%) | Target Prog (New / Old) | Target Stuck (<20%) | "
+        "All Surv | All Prog (New / Old) | Torque Sat | Non-Foot | Term (ori/base) | Gate Target |"
     )
     sum_sep = "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|"
     sum_lines = [sum_header, sum_sep]
     for r in summary_rows:
         gate_str = "**PASS**" if r["pass_target"] else "**FAIL**"
         sum_lines.append(
-            f"| `{r['terrain']}` | L0-{r['target_level_cap']} | **`{r['surv_target']:.1f}%`** | **`{r['prog_target']:.1f}%`** | "
-            f"`{r['stuck_target']:.1f}%` | `{r['surv_all']:.1f}%` | `{r['prog_all']:.1f}%` | `{r['torque_sat_pct']:.2f}%` | "
+            f"| `{r['terrain']}` | L0-{r['target_level_cap']} | **`{r['surv_target']:.1f}%`** | **`{r['prog_target']:.1f}%`** / `{r['old_prog_target']:.1f}%` | "
+            f"`{r['stuck_target']:.1f}%` | `{r['surv_all']:.1f}%` | `{r['prog_all']:.1f}%` / `{r['old_prog_all']:.1f}%` | `{r['torque_sat_pct']:.2f}%` | "
             f"`{r['non_foot_pct']:.2f}%` | `{r['bad_ori']} / {r['base_contact']}` | {gate_str} |"
         )
     summary_table_md = "\n".join(sum_lines)
