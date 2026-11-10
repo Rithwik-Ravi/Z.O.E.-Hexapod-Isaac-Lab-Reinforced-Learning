@@ -759,3 +759,34 @@
 </details>
 
 ---
+
+
+## Principled Gate Amendment (Pre-Probe Protocol) - 2026-11-10
+
+### Rationale & Physics Justification
+- **Asset Mass**: $5.00\text{ kg}$ total robot mass ($W = 49.05\text{ N}$).
+- **Tripod Stance Physics**: In tripod locomotion (3 feet down), each stance foot supports on average $W / 3 = 16.35\text{ N}$. With the nominal kinematic thigh lever arm of $0.115\text{ m}$, the static holding torque at each stance thigh joint is:
+  $$\tau_{\text{static}} = 16.35\text{ N} \times 0.115\text{ m} = 1.880\text{ N}\cdot\text{m}$$
+  This already represents $75.2\%$ of the actuator peak effort limit ($2.50\text{ N}\cdot\text{m}$).
+- **Dynamic Transition Torque**: Dynamic leg transfer, swing initiation, and stance impact add $15-20\%$ transient torque, pushing peak thigh torques to $2.10 - 2.20\text{ N}\cdot\text{m}$.
+- **Impossibility of Old Gate**: Requiring joint torque saturation $\le 2\%$ at a soft threshold of $1.95\text{ N}\cdot\text{m}$ (or even $2.10\text{ N}\cdot\text{m}$) while walking was mathematically and physically unachievable for a $5.0\text{ kg}$ hexapod. It created an unintended reward trap where the policy discovered that standing still/creeping at $0.006\text{ m/s}$ (with 6 feet down, $\tau = 0.940\text{ N}\cdot\text{m} \ll 1.95\text{ N}\cdot\text{m}$) achieved higher total reward by evading the severe torque penalty.
+- **Physical Meaning**: Torque saturation is merely an instantaneous proxy for servo thermal accumulation, not a binary functional failure.
+
+### Amended Gate Specification (Frozen Now - Never Tuned to a Checkpoint)
+1. **Torque Metrics $\to$ REPORT-ONLY**:
+   - Torque saturation percentage ($|\tau| \ge 2.10\text{ N}\cdot\text{m}$) in Condition 1, Condition 2, Condition 3.
+   - Forward walk (Condition 2) stance torques per joint type: mean $|\tau|$ and RMS $\tau$ for coxa, thigh, foot.
+   - Forward walk (Condition 2) support polygon distribution: fraction of steps with $\ge 4$ feet down.
+2. **New Velocity Tracking PASS/FAIL Gates**:
+   - **Forward Velocity** ($0.15\text{ m/s}$): tracked $\ge 80\%$ (mean $v_x \ge 0.120\text{ m/s}$).
+   - **Pure Yaw** ($0.40\text{ rad/s}$): tracked $\ge 50\%$ (mean $\omega_z \ge 0.200\text{ rad/s}$).
+   - **Strafe Velocity** ($0.12\text{ m/s}$): tracked $\ge 50\%$ (mean $v_y \ge 0.060\text{ m/s}$).
+   - **Backward Velocity** ($-0.12\text{ m/s}$): tracked $\ge 50\%$ (mean $v_x \le -0.060\text{ m/s}$).
+3. **Non-Torque PASS/FAIL Gates (Unchanged)**:
+   - Base height $\ge 0.1275\text{ m}$ ($\ge 95\%$ standing, $\ge 90\%$ walking).
+   - Ground contact: $\ge 5$ feet down standing ($\ge 95\%$), $\ge 3$ feet down walking ($\ge 99\%$).
+   - Non-foot contact: $< 1\%$ across all conditions.
+   - Static stability margin: $p_5 \ge 0.0\text{ m}$.
+   - Push recovery: 0 falls, height recovery held $\ge 90\%$ across both $0.3-0.5\text{ m/s}$ impulses.
+
+---

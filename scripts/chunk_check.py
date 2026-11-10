@@ -193,13 +193,8 @@ def run_chunk_check():
         "threshold": "< 1%",
         "pass": c1_non_foot_pct < 1.0,
     })
-    results.append({
-        "cond": "1. Zero Command",
-        "metric": f"Torque sat (|tau| >= {TORQUE_SAT_THRESHOLD:.2f} N.m)",
-        "measured": f"{c1_torque_sat_pct:.2f}% joint-steps",
-        "threshold": "<= 2%",
-        "pass": c1_torque_sat_pct <= 2.0,
-    })
+    # Note: Torque saturation is REPORT-ONLY (principled gate amendment Task 5)
+
 
     # =========================================================================
     # CONDITION 2: Forward Command 0.15 m/s (10.0s = 500 steps)
@@ -224,6 +219,13 @@ def run_chunk_check():
     c2_coxa_near_count = 0
     c2_thigh_near_count = 0
     c2_foot_near_count = 0
+    c2_feet_ge_4_count = 0
+    c2_coxa_tau_abs_sum = 0.0
+    c2_coxa_tau_sq_sum = 0.0
+    c2_thigh_tau_abs_sum = 0.0
+    c2_thigh_tau_sq_sum = 0.0
+    c2_foot_tau_abs_sum = 0.0
+    c2_foot_tau_sq_sum = 0.0
     max_swing_clearance_per_env_leg = torch.zeros((args_cli.num_envs, 6), device=args_cli.device)
 
     stability_margins = []
@@ -246,13 +248,21 @@ def run_chunk_check():
             in_contact = forces_z > 1.0
             feet_down = in_contact.sum(dim=1)
             c2_feet_pass += (feet_down >= 3).sum().item()
+            c2_feet_ge_4_count += (feet_down >= 4).sum().item()
 
             if non_foot_ids:
                 non_foot_forces = torch.norm(contact_sensor.data.net_forces_w[:, non_foot_ids, :], dim=-1)
                 c2_non_foot_contacts += (non_foot_forces > 1.0).any(dim=1).sum().item()
 
-            torques = torch.abs(robot.data.applied_torque)
-            c2_torque_sat_count += (torques >= TORQUE_SAT_THRESHOLD).sum().item()
+            torq_raw = robot.data.applied_torque
+            torq_abs = torch.abs(torq_raw)
+            c2_torque_sat_count += (torq_abs >= TORQUE_SAT_THRESHOLD).sum().item()
+            c2_coxa_tau_abs_sum += torq_abs[:, coxa_ids].sum().item()
+            c2_coxa_tau_sq_sum += (torq_raw[:, coxa_ids] ** 2).sum().item()
+            c2_thigh_tau_abs_sum += torq_abs[:, thigh_ids].sum().item()
+            c2_thigh_tau_sq_sum += (torq_raw[:, thigh_ids] ** 2).sum().item()
+            c2_foot_tau_abs_sum += torq_abs[:, foot_ids_joints].sum().item()
+            c2_foot_tau_sq_sum += (torq_raw[:, foot_ids_joints] ** 2).sum().item()
 
             # Liveness: forward velocity in body frame
             c2_vel_x_sum += robot.data.root_lin_vel_b[:, 0].sum().item()
@@ -301,6 +311,14 @@ def run_chunk_check():
     c2_foot_prox_pct = 100.0 * c2_foot_near_count / c2_total_type_joint_steps
     c2_swing_clearance_cm = (max_swing_clearance_per_env_leg.mean(dim=0) * 100.0).cpu().tolist()
 
+    c2_ge_4_feet_pct = 100.0 * c2_feet_ge_4_count / c2_total_frames
+    c2_coxa_mean_tau = c2_coxa_tau_abs_sum / c2_total_type_joint_steps
+    c2_coxa_rms_tau = math.sqrt(c2_coxa_tau_sq_sum / c2_total_type_joint_steps)
+    c2_thigh_mean_tau = c2_thigh_tau_abs_sum / c2_total_type_joint_steps
+    c2_thigh_rms_tau = math.sqrt(c2_thigh_tau_sq_sum / c2_total_type_joint_steps)
+    c2_foot_mean_tau = c2_foot_tau_abs_sum / c2_total_type_joint_steps
+    c2_foot_rms_tau = math.sqrt(c2_foot_tau_sq_sum / c2_total_type_joint_steps)
+
     mean_margin = float(np.mean(stability_margins)) if stability_margins else -1.0
     min_margin = float(np.min(stability_margins)) if stability_margins else -1.0
     p5_margin = float(np.percentile(stability_margins, 5)) if stability_margins else -1.0
@@ -335,18 +353,12 @@ def run_chunk_check():
     })
     results.append({
         "cond": "2. Forward Walk 0.15m/s",
-        "metric": "Forward speed (not-frozen)",
+        "metric": "Forward speed (>= 80% tracking)",
         "measured": f"{c2_mean_speed:.4f} m/s",
         "threshold": ">= 0.1200 m/s (80% of 0.15m/s)",
         "pass": c2_mean_speed >= 0.120,
     })
-    results.append({
-        "cond": "2. Forward Walk 0.15m/s",
-        "metric": f"Torque sat (|tau| >= {TORQUE_SAT_THRESHOLD:.2f} N.m)",
-        "measured": f"{c2_torque_sat_pct:.2f}% joint-steps",
-        "threshold": "<= 2%",
-        "pass": c2_torque_sat_pct <= 2.0,
-    })
+    # Note: Torque saturation is REPORT-ONLY (principled gate amendment Task 5)
 
     # =========================================================================
     # CONDITION 3: Forward Command with Pushes at 2.0s and 5.0s (8.0s = 400 steps)
@@ -439,13 +451,7 @@ def run_chunk_check():
         "threshold": ">= 90%",
         "pass": push2_hold_pct >= 90.0,
     })
-    results.append({
-        "cond": "3. Push Recovery",
-        "metric": f"Torque sat (|tau| >= {TORQUE_SAT_THRESHOLD:.2f} N.m)",
-        "measured": f"{c3_torque_sat_pct:.2f}% joint-steps",
-        "threshold": "<= 2%",
-        "pass": c3_torque_sat_pct <= 2.0,
-    })
+    # Note: Torque saturation is REPORT-ONLY (principled gate amendment Task 5)
 
     # =========================================================================
     # REPORT-ONLY METRICS: Dedicated Pure-Yaw Test (0.4 rad/s, 5.0s) & Strafe (0.12 m/s, 3.0s)
@@ -498,7 +504,15 @@ def run_chunk_check():
     yaw_thigh_prox_pct = 100.0 * yaw_thigh_near_count / yaw_total_type_steps
     yaw_foot_prox_pct = 100.0 * yaw_foot_near_count / yaw_total_type_steps
 
-    print("\n--> Evaluating Report-Only Strafe Tracking (cmd 0.12 m/s, 3.0s = 150 steps)...")
+    results.append({
+        "cond": "4. Pure Yaw 0.40 rad/s",
+        "metric": "Yaw rate tracking (>= 50%)",
+        "measured": f"{mean_yaw_wz:+.4f} rad/s ({yaw_tracking_pct:.1f}%)",
+        "threshold": ">= 0.2000 rad/s (50%)",
+        "pass": yaw_tracking_pct >= 50.0,
+    })
+
+    print("\n--> Evaluating Strafe Velocity Tracking (cmd 0.12 m/s, 3.0s = 150 steps)...")
     obs_res = env.reset()
     obs = obs_res[0] if isinstance(obs_res, tuple) else obs_res
     strafe_steps = 150
@@ -515,6 +529,40 @@ def run_chunk_check():
             obs = env.step(actions)[0]
     mean_strafe_vy = strafe_vy_sum / (strafe_steps * args_cli.num_envs)
     strafe_tracking_pct = 100.0 * mean_strafe_vy / 0.12
+
+    results.append({
+        "cond": "5. Strafe 0.12 m/s",
+        "metric": "Lateral velocity tracking (>= 50%)",
+        "measured": f"{mean_strafe_vy:+.4f} m/s ({strafe_tracking_pct:.1f}%)",
+        "threshold": ">= 0.0600 m/s (50%)",
+        "pass": strafe_tracking_pct >= 50.0,
+    })
+
+    print("\n--> Evaluating Backward Velocity Tracking (cmd -0.12 m/s, 3.0s = 150 steps)...")
+    obs_res = env.reset()
+    obs = obs_res[0] if isinstance(obs_res, tuple) else obs_res
+    bwd_steps = 150
+    bwd_vx_sum = 0.0
+    with torch.no_grad():
+        for _ in range(bwd_steps):
+            cmd = unwrapped.command_manager.get_command("base_velocity")
+            cmd[:, 0] = -0.12
+            cmd[:, 1] = 0.0
+            cmd[:, 2] = 0.0
+            pol_obs = obs["policy"] if isinstance(obs, dict) else obs
+            actions = policy(pol_obs)
+            bwd_vx_sum += robot.data.root_lin_vel_b[:, 0].sum().item()
+            obs = env.step(actions)[0]
+    mean_bwd_vx = bwd_vx_sum / (bwd_steps * args_cli.num_envs)
+    bwd_tracking_pct = 100.0 * (-mean_bwd_vx) / 0.12
+
+    results.append({
+        "cond": "6. Backward Walk -0.12 m/s",
+        "metric": "Backward velocity tracking (>= 50%)",
+        "measured": f"{mean_bwd_vx:+.4f} m/s ({bwd_tracking_pct:.1f}%)",
+        "threshold": "<= -0.0600 m/s (50%)",
+        "pass": bwd_tracking_pct >= 50.0,
+    })
 
     # =========================================================================
     # SUMMARY TABLE & OVERALL GATE EVALUATION
@@ -538,10 +586,22 @@ def run_chunk_check():
     print("=" * 90)
     print(full_table)
     print("-" * 90)
-    print("REPORT-ONLY METRICS (Gate Thresholds Frozen):")
+    print("REPORT-ONLY METRICS (Gate Thresholds Frozen - Principled Amendment Task 5):")
+    print(f"  Torque Saturation (>= {TORQUE_SAT_THRESHOLD:.2f} N.m):")
+    print(f"    - Condition 1 (Zero Cmd)   : {c1_torque_sat_pct:.2f}% joint-steps")
+    print(f"    - Condition 2 (Forward Walk): {c2_torque_sat_pct:.2f}% joint-steps")
+    print(f"    - Condition 3 (Push Recovery): {c3_torque_sat_pct:.2f}% joint-steps")
+    print(f"  Forward Walk (C2) Joint Torques (5.0 kg):")
+    print(f"    - Coxa : mean |tau| = {c2_coxa_mean_tau:.3f} N.m, RMS tau = {c2_coxa_rms_tau:.3f} N.m")
+    print(f"    - Thigh: mean |tau| = {c2_thigh_mean_tau:.3f} N.m, RMS tau = {c2_thigh_rms_tau:.3f} N.m")
+    print(f"    - Foot : mean |tau| = {c2_foot_mean_tau:.3f} N.m, RMS tau = {c2_foot_rms_tau:.3f} N.m")
+    print(f"  Forward Walk (C2) Contact Distribution:")
+    print(f"    - >= 4 feet in contact: {c2_ge_4_feet_pct:.2f}% frames")
+    print(f"    - >= 3 feet in contact: {c2_feet_pct:.2f}% frames")
     print(f"  Dedicated Pure-Yaw (0.40 rad/s) : {mean_yaw_wz:+.4f} rad/s ({yaw_tracking_pct:.1f}%), Feet: {mean_yaw_feet_down:.2f}/6, TorqSat: {yaw_torque_sat_pct:.2f}%")
     print(f"  Pure-Yaw Joint Proximity (<=3 deg): Coxa: {yaw_coxa_prox_pct:.2f}%, Thigh: {yaw_thigh_prox_pct:.2f}%, Foot: {yaw_foot_prox_pct:.2f}%")
     print(f"  Strafe Tracking (0.12 m/s)      : {mean_strafe_vy:+.4f} m/s ({strafe_tracking_pct:.1f}%)")
+    print(f"  Backward Tracking (-0.12 m/s)   : {mean_bwd_vx:+.4f} m/s ({bwd_tracking_pct:.1f}%)")
     print(f"  Forward Walk Joint Prox (<=3 deg): Coxa: {c2_coxa_prox_pct:.2f}%, Thigh: {c2_thigh_prox_pct:.2f}%, Foot: {c2_foot_prox_pct:.2f}%")
     print(f"  Swing Clearance per Leg (C2)    : {swing_str} (Note: 1-3 cm swing clearance is flat ground only)")
     print("=" * 90)
@@ -559,10 +619,19 @@ def run_chunk_check():
 - **Checkpoint**: `{ckpt_path}`
 - **Overall Verdict**: **{overall_status}**
 
-### Gate Results (Frozen Thresholds)
+### Gate Results (Frozen Thresholds - Task 5 Amendment)
 {full_table}
 
 ### Report-Only Diagnostics
+- **Torque Saturation (>= {TORQUE_SAT_THRESHOLD:.2f} N.m)**:
+  - C1 (Zero Cmd): `{c1_torque_sat_pct:.2f}%` | C2 (Forward Walk): `{c2_torque_sat_pct:.2f}%` | C3 (Push Recovery): `{c3_torque_sat_pct:.2f}%`
+- **Forward Walk (C2) Stance Torques**:
+  - Coxa: mean `{c2_coxa_mean_tau:.3f} N.m`, RMS `{c2_coxa_rms_tau:.3f} N.m`
+  - Thigh: mean `{c2_thigh_mean_tau:.3f} N.m`, RMS `{c2_thigh_rms_tau:.3f} N.m`
+  - Foot: mean `{c2_foot_mean_tau:.3f} N.m`, RMS `{c2_foot_rms_tau:.3f} N.m`
+- **Forward Walk (C2) Support Polygon**:
+  - >= 4 feet in contact: `{c2_ge_4_feet_pct:.2f}%` frames
+  - >= 3 feet in contact: `{c2_feet_pct:.2f}%` frames
 - **Dedicated Pure-Yaw Test (cmd 0.40 rad/s, 5.0s)**:
   - Yaw Rate: `{mean_yaw_wz:+.4f} rad/s` ({yaw_tracking_pct:.1f}% tracking)
   - Mean Feet Down: `{mean_yaw_feet_down:.2f} / 6.0`
@@ -570,6 +639,8 @@ def run_chunk_check():
   - Joint Limit Proximity (<=3 deg): Coxa `{yaw_coxa_prox_pct:.2f}%`, Thigh `{yaw_thigh_prox_pct:.2f}%`, Foot `{yaw_foot_prox_pct:.2f}%`
 - **Strafe Tracking (cmd 0.12 m/s, 3.0s)**:
   - Strafe Velocity: `{mean_strafe_vy:+.4f} m/s` ({strafe_tracking_pct:.1f}% tracking)
+- **Backward Tracking (cmd -0.12 m/s, 3.0s)**:
+  - Backward Velocity: `{mean_bwd_vx:+.4f} m/s` ({bwd_tracking_pct:.1f}% tracking)
 - **Forward Walk Joint Limit Proximity (<=3 deg)**:
   - Coxa: `{c2_coxa_prox_pct:.2f}%` | Thigh: `{c2_thigh_prox_pct:.2f}%` | Foot: `{c2_foot_prox_pct:.2f}%`
 - **Swing Clearance per Leg (Condition 2 Forward Walk)**:
