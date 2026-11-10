@@ -24,7 +24,10 @@ ZOE_FLAT_TERRAIN_CFG = TerrainGeneratorCfg(
     },
 )
 
-# Stage 2: Multi-Terrain World Generator Config (Rescaled for 0.15m stance height)
+# Stage 2: Multi-Terrain World Generator Config (Extended difficulty ceiling for Part C)
+# Ceiling targets: steps 9cm, boxes 7cm, slopes 0.40 rad, rough 4.5cm.
+# Frozen DEPLOYMENT TARGET: steps <= 4cm (L0-3), slopes <= 12 deg / 0.21 rad (L0-4),
+#                           boxes <= 4cm (L0-4), rough <= 2.5cm (L0-4).
 ZOE_TERRAINS_CFG = TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=20.0,
@@ -40,22 +43,22 @@ ZOE_TERRAINS_CFG = TerrainGeneratorCfg(
             proportion=0.10, noise_range=(0.0, 0.0), noise_step=0.02, border_width=0.25
         ),
         "rough": terrain_gen.HfRandomUniformTerrainCfg(
-            proportion=0.20, noise_range=(0.005, 0.03), noise_step=0.005, border_width=0.25
+            proportion=0.20, noise_range=(0.005, 0.045), noise_step=0.005, border_width=0.25
         ),
         "slope_up": terrain_gen.HfPyramidSlopedTerrainCfg(
-            proportion=0.12, slope_range=(0.0, 0.30), platform_width=2.0
+            proportion=0.12, slope_range=(0.0, 0.40), platform_width=2.0
         ),
         "slope_down": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
-            proportion=0.12, slope_range=(0.0, 0.30), platform_width=2.0
+            proportion=0.12, slope_range=(0.0, 0.40), platform_width=2.0
         ),
         "stairs_up": terrain_gen.MeshPyramidStairsTerrainCfg(
-            proportion=0.12, step_height_range=(0.01, 0.06), step_width=0.30, platform_width=2.0
+            proportion=0.12, step_height_range=(0.01, 0.09), step_width=0.30, platform_width=2.0
         ),
         "stairs_down": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-            proportion=0.10, step_height_range=(0.01, 0.06), step_width=0.30, platform_width=2.0
+            proportion=0.10, step_height_range=(0.01, 0.09), step_width=0.30, platform_width=2.0
         ),
         "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-            proportion=0.14, grid_width=0.45, grid_height_range=(0.01, 0.05), platform_width=2.0
+            proportion=0.14, grid_width=0.45, grid_height_range=(0.01, 0.07), platform_width=2.0
         ),
     },
 )
