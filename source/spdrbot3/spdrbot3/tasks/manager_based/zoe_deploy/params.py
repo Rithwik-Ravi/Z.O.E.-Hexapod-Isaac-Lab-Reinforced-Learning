@@ -155,8 +155,8 @@ class ZoeObsScaleParams:
 class ZoeEventParams:
     static_friction_range: tuple[float, float] = (0.4, 1.2)
     dynamic_friction_range: tuple[float, float] = (0.3, 1.0)
-    base_mass_scale_range: tuple[float, float] = (0.90, 1.10)  # Multiplicative scale +-10%
-    body_mass_scale_range: tuple[float, float] = (0.90, 1.10)  # Multiplicative scale +-10%
+    base_mass_scale_range: tuple[float, float] = (0.80, 1.10)  # Multiplicative scale 80-110% (covers 4.0-5.5 kg around 5.0 kg)
+    body_mass_scale_range: tuple[float, float] = (0.80, 1.10)  # Multiplicative scale 80-110%
     base_com_offset_range: tuple[float, float] = (-0.015, 0.015)  # m
     actuator_kp_scale_range: tuple[float, float] = (0.70, 1.30)  # +-30%
     actuator_kd_scale_range: tuple[float, float] = (0.70, 1.30)  # +-30%

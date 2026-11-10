@@ -71,18 +71,43 @@ def test_params_bounds():
 
 
 def test_mass_randomization_bounds():
-    """Verify that mass scale ranges are +-10% and prevent negative or near-zero masses."""
+    """Verify that mass scale ranges are (0.80, 1.10) covering 4.0-5.5 kg around 5.0 kg."""
     base_min, base_max = ZOE_PARAMS.events.base_mass_scale_range
     body_min, body_max = ZOE_PARAMS.events.body_mass_scale_range
 
-    assert (base_min, base_max) == (0.90, 1.10)
-    assert (body_min, body_max) == (0.90, 1.10)
+    assert (base_min, base_max) == (0.80, 1.10)
+    assert (body_min, body_max) == (0.80, 1.10)
 
     # Reference nominal base link mass from audit report (2.5027 kg on new hexa_ir robot)
     ref_base_mass = ZOE_PARAMS.BASE_LINK_MASS_KG
     assert ref_base_mass > 2.0, f"Expected new base_link mass > 2.0 kg, got {ref_base_mass}"
     min_possible_base_mass = ref_base_mass * base_min
     assert min_possible_base_mass > 0.10, f"Min base mass {min_possible_base_mass} kg is dangerously near zero!"
+
+
+def test_set_payload_mass_reconstruction():
+    """Verify scripts/set_payload_mass.py exact mass and inertia reconstruction (Task 7)."""
+    import sys
+    import os
+    sys.path.append(os.path.abspath("scripts"))
+    from set_payload_mass import compute_payload_mass_properties, CAD_BASE_MASS_KG, CAD_SIX_LEGS_MASS_KG
+
+    for target_m in [4.50, 5.00, 5.50]:
+        props = compute_payload_mass_properties(target_m)
+        assert abs(props["total_mass_kg"] - target_m) < 1e-6
+        assert abs(props["base_link_mass_kg"] + CAD_SIX_LEGS_MASS_KG - target_m) < 1e-6
+        assert abs(props["payload_added_kg"] - (props["base_link_mass_kg"] - CAD_BASE_MASS_KG)) < 1e-6
+
+        # Inertia scales linearly
+        scale = props["inertia_scale"]
+        assert abs(scale - (props["base_link_mass_kg"] / CAD_BASE_MASS_KG)) < 1e-6
+        assert abs(props["scaled_inertia"]["ixx"] - (0.010209323161935659 * scale)) < 1e-9
+        assert abs(props["scaled_inertia"]["izz"] - (0.019355228545140914 * scale)) < 1e-9
+
+    # Negative/too low mass raises ValueError
+    import pytest
+    with pytest.raises(ValueError):
+        compute_payload_mass_properties(1.0)
 
 
 def test_derived_asset_and_actuator_constants():
