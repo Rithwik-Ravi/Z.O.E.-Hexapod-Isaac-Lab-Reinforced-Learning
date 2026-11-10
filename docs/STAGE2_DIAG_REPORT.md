@@ -440,4 +440,172 @@ Run Stage 2 in **1500-iteration chunks** with `scripts/terrain_check.py` and `sc
    - Stage 1 flat gate metrics (`scripts/chunk_check.py`) degrade by more than `10%` relative to the warm-start checkpoint.
    - `Policy/mean_noise_std` grows above `0.50` (indicating exploration destabilization).
 
+---
+
+## 7. Stage 2 Multi-Group & Terrain Ceiling Verification (Parts A–F)
+
+**Date**: 2026-11-10  
+**Evaluated Run**: `logs/rsl_rl/zoe_hexapod_terrain/2026-11-10_18-11-19` (600 iterations, ended `model_2098.pt`)  
+**Warm-Start Source**: Stage 1 Chunk 1 final checkpoint (`logs/rsl_rl/zoe_hexapod_deploy/2026-11-09_22-33-44/model_1499.pt`)  
+**Architecture Upgrades Evaluated**:
+1. **Part A (Curriculum Progress Accounting)**: Step-integrated distance $\sum \max(0, \mathbf{v}_{xy} \cdot \hat{\mathbf{cmd}}_{xy})\Delta t$ along commanded direction. Standing envs protect level; command reversals preserve progress; early terminations demote.
+2. **Part B (Two Env Groups)**: 50% Group T (Traversal: 20s held episode, $v_x \in [0.10, 0.25], v_y \in [-0.10, 0.10], \omega_z \in [-0.30, 0.30]$, full levels 0–9) + 50% Group S (Skills: Stage 1 distribution, 3–5s resampling, 10% standing, $\ge 25\%$ yaw-dominant, backward allowed, level capped at 3).
+3. **Part C (Extended Terrain Difficulty Ceiling)**: Stairs up/down 9 cm, boxes 7 cm, slopes 0.40 rad, rough 4.5 cm. Frozen deployment targets: stairs $\le 4\text{ cm}$ (Level 3), slopes $\le 12^\circ$ (Level 4), boxes $\le 4\text{ cm}$ (Level 4), rough $\le 2.5\text{ cm}$ (Level 4).
+4. **Part D (Evaluation Suite)**: `scripts/terrain_check.py` measuring survival, progress ratio, stuck fraction (<20%), torque saturation, and 5-skill retention test against warm-start baseline.
+
+---
+
+### A. Stage 2 Probe 1 Summary Table (Target Levels vs. All Levels)
+
+Evaluation of `model_2098.pt` on `Zoe-Hexapod-Terrain-v0` (455 envs, 65 envs/terrain across levels `[0, 2, 4, 6, 9]`, 20.0s episode, forward command 0.20 m/s with random initial headings). Comparison against warm-start baseline `model_1499.pt` (`VERIFIED`):
+
+| Terrain Type | Target Lvl | Baseline Surv | Probe 1 Target Surv (Gate $\ge 90\%$) | Baseline Prog | Probe 1 Target Prog (Gate $\ge 70\%$) | Baseline Stuck | Probe 1 Stuck ($< 20\%$) | All-Lvl Surv | All-Lvl Prog | Torque Sat | Non-Foot | Target Gate |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `flat` | L0-4 | `100.0%` | **`100.0%`** | `5.5%` | **`58.0%`** | `100.0%` | **`0.0%`** | `100.0%` | `57.6%` | `8.02%` | `0.02%` | **IN PROGRESS** (Surv PASS, Prog 58%) |
+| `rough` | L0-4 | `92.3%` | **`100.0%`** | `6.3%` | **`43.1%`** | `92.3%` | **`0.0%`** | `100.0%` | `44.2%` | `11.14%` | `0.02%` | **IN PROGRESS** (Surv PASS, Prog 43%) |
+| `slope_up` | L0-4 | `100.0%` | **`100.0%`** | `5.7%` | **`55.5%`** | `100.0%` | **`0.0%`** | `100.0%` | `55.3%` | `8.12%` | `0.02%` | **IN PROGRESS** (Surv PASS, Prog 55%) |
+| `slope_down` | L0-4 | `100.0%` | **`100.0%`** | `5.7%` | **`54.4%`** | `100.0%` | **`0.0%`** | `100.0%` | `54.4%` | `8.25%` | `0.03%` | **IN PROGRESS** (Surv PASS, Prog 54%) |
+| `stairs_up` | L0-3 | `100.0%` | **`100.0%`** | `5.7%` | **`55.1%`** | `100.0%` | **`0.0%`** | `69.2%` | `55.0%` | `10.22%` | `0.02%` | **IN PROGRESS** (Surv PASS, Prog 55%) |
+| `stairs_down` | L0-3 | `100.0%` | **`100.0%`** | `5.6%` | **`48.1%`** | `100.0%` | **`0.0%`** | `100.0%` | `48.2%` | `9.12%` | `0.02%` | **IN PROGRESS** (Surv PASS, Prog 48%) |
+| `boxes` | L0-4 | `100.0%` | **`100.0%`** | `5.6%` | **`52.8%`** | `100.0%` | **`0.0%`** | `84.6%` | `53.8%` | `8.65%` | `0.02%` | **IN PROGRESS** (Surv PASS, Prog 53%) |
+
+---
+
+### B. Per-Level Traversal Breakdown (`model_2098.pt`) (`VERIFIED`)
+
+Full per-cell traversal breakdown across difficulty levels `[0, 2, 4, 6, 9]` (13 envs per cell):
+
+| Terrain | Level | Survival | Progress Ratio | Stuck (<20%) | Final Dist (m) | Off-Plat (>1.2m) | Feet Down | Non-Foot | Torque Sat | Term (ori/base) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `flat` | 0 | `100.0%` | `57.9%` | `0.0%` | `1.13` | `7.2%` | `5.36` | `0.00%` | `7.87%` | `0/0` |
+| `flat` | 2 | `100.0%` | `58.2%` | `0.0%` | `1.24` | `12.1%` | `5.26` | `0.00%` | `8.17%` | `0/0` |
+| `flat` | 4 | `100.0%` | `57.9%` | `0.0%` | `1.16` | `7.8%` | `5.37` | `0.00%` | `8.02%` | `0/0` |
+| `flat` | 6 | `100.0%` | `57.1%` | `0.0%` | `1.14` | `6.7%` | `5.35` | `0.00%` | `8.17%` | `0/0` |
+| `flat` | 9 | `100.0%` | `57.0%` | `0.0%` | `1.22` | `9.4%` | `5.28` | `0.04%` | `7.86%` | `0/0` |
+| `rough` | 0 | `100.0%` | `40.1%` | `0.0%` | `0.25` | `0.0%` | `4.76` | `0.01%` | `11.21%` | `0/0` |
+| `rough` | 2 | `100.0%` | `44.9%` | `0.0%` | `0.26` | `0.0%` | `4.59` | `0.04%` | `11.40%` | `0/0` |
+| `rough` | 4 | `100.0%` | `44.3%` | `0.0%` | `0.39` | `0.0%` | `4.69` | `0.00%` | `11.40%` | `0/0` |
+| `rough` | 6 | `100.0%` | `45.9%` | `0.0%` | `0.33` | `0.0%` | `4.75` | `0.00%` | `11.13%` | `0/0` |
+| `rough` | 9 | `100.0%` | `45.7%` | `0.0%` | `0.32` | `0.0%` | `4.63` | `0.05%` | `10.55%` | `0/0` |
+| `slope_up` | 0 | `100.0%` | `53.3%` | `0.0%` | `1.07` | `3.2%` | `5.32` | `0.02%` | `8.18%` | `0/0` |
+| `slope_up` | 2 | `100.0%` | `57.6%` | `0.0%` | `1.20` | `10.1%` | `5.16` | `0.02%` | `8.40%` | `0/0` |
+| `slope_up` | 4 | `100.0%` | `55.6%` | `0.0%` | `1.23` | `7.2%` | `4.85` | `0.05%` | `7.77%` | `0/0` |
+| `slope_up` | 6 | `100.0%` | `53.7%` | `0.0%` | `1.05` | `4.2%` | `5.32` | `0.00%` | `7.95%` | `0/0` |
+| `slope_up` | 9 | `100.0%` | `56.4%` | `0.0%` | `1.19` | `7.4%` | `5.20` | `0.05%` | `8.20%` | `0/0` |
+| `slope_down` | 0 | `100.0%` | `55.7%` | `0.0%` | `1.06` | `7.1%` | `5.15` | `0.03%` | `8.82%` | `0/0` |
+| `slope_down` | 2 | `100.0%` | `53.5%` | `0.0%` | `1.10` | `6.7%` | `5.16` | `0.02%` | `7.82%` | `0/0` |
+| `slope_down` | 4 | `100.0%` | `54.1%` | `0.0%` | `0.99` | `4.1%` | `5.16` | `0.05%` | `8.11%` | `0/0` |
+| `slope_down` | 6 | `100.0%` | `54.8%` | `0.0%` | `1.16` | `9.6%` | `5.04` | `0.02%` | `6.85%` | `0/0` |
+| `slope_down` | 9 | `100.0%` | `53.9%` | `0.0%` | `1.11` | `7.4%` | `4.97` | `0.03%` | `8.17%` | `0/0` |
+| `stairs_up` | 0 | `100.0%` | `56.6%` | `0.0%` | `0.97` | `4.4%` | `4.99` | `0.04%` | `9.68%` | `0/0` |
+| `stairs_up` | 2 | `100.0%` | `53.7%` | `0.0%` | `0.96` | `0.5%` | `4.75` | `0.01%` | `10.20%` | `0/0` |
+| `stairs_up` | 4 | `84.6%` | `45.4%` | `0.0%` | `0.74` | `0.0%` | `4.65` | `0.05%` | `12.33%` | `2/0` |
+| `stairs_up` | 6 | `61.5%` | `48.7%` | `0.0%` | `0.73` | `0.0%` | `4.65` | `0.00%` | `10.91%` | `5/0` |
+| `stairs_up` | 9 | `0.0%` | `63.4%` | `0.0%` | `0.81` | `0.0%` | `4.90` | `0.00%` | `9.16%` | `11/3` |
+| `stairs_down` | 0 | `100.0%` | `46.1%` | `0.0%` | `0.66` | `0.0%` | `5.03` | `0.04%` | `9.25%` | `0/0` |
+| `stairs_down` | 2 | `100.0%` | `50.2%` | `0.0%` | `0.66` | `0.0%` | `5.14` | `0.02%` | `9.64%` | `0/0` |
+| `stairs_down` | 4 | `100.0%` | `45.8%` | `0.0%` | `0.65` | `0.0%` | `5.07` | `0.03%` | `8.60%` | `0/0` |
+| `stairs_down` | 6 | `100.0%` | `49.4%` | `0.0%` | `0.61` | `0.0%` | `5.22` | `0.00%` | `8.62%` | `0/0` |
+| `stairs_down` | 9 | `100.0%` | `49.7%` | `0.0%` | `0.67` | `0.0%` | `4.88` | `0.02%` | `8.99%` | `0/0` |
+| `boxes` | 0 | `100.0%` | `53.2%` | `0.0%` | `1.13` | `7.3%` | `4.96` | `0.04%` | `8.58%` | `0/0` |
+| `boxes` | 2 | `100.0%` | `51.9%` | `0.0%` | `0.90` | `0.6%` | `4.73` | `0.03%` | `8.72%` | `0/0` |
+| `boxes` | 4 | `100.0%` | `53.4%` | `0.0%` | `1.01` | `1.4%` | `4.88` | `0.02%` | `8.89%` | `0/0` |
+| `boxes` | 6 | `76.9%` | `54.6%` | `0.0%` | `1.01` | `0.2%` | `5.18` | `0.00%` | `8.15%` | `3/0` |
+| `boxes` | 9 | `46.2%` | `55.9%` | `0.0%` | `0.97` | `0.0%` | `4.88` | `0.00%` | `10.32%` | `5/3` |
+
+**Difficulty Ceiling Observations (`VERIFIED`)**:
+- Target levels ($\le 3$ for stairs, $\le 4$ for slopes, boxes, rough) maintain **100.0% survival** across all 7 terrain types.
+- Beyond the target levels, the extended difficulty ceiling takes effect:
+  - `stairs_up`: L4 surv = 84.6% $\to$ L6 surv = 61.5% $\to$ **L9 surv = 0.0%** (11 bad orientation falls, 3 base contacts).
+  - `boxes`: L6 surv = 76.9% $\to$ **L9 surv = 46.2%** (5 bad orientation falls, 3 base contacts).
+  - This demonstrates that the curriculum ceiling provides a genuine challenge boundary while keeping deployment target levels reliable.
+
+---
+
+### C. Skill Retention Suite Results (`VERIFIED`)
+
+Evaluated on 143 environments across flat tiles and levels 0–2 of slopes and rough (5.0s per skill, 250 steps):
+
+| Skill | Command Target | Baseline (`model_1499.pt`) | Probe 1 (`model_2098.pt`) | Relative Improvement | Gate Threshold | Result |
+|---|---|---:|---:|---|---|---|
+| `standing` | `[0.0, 0.0, 0.0]` | `+96.97% >=5 feet down` | **`+97.58% >=5 feet down`** | `+0.61%` (improved) | `ge 95%` | **PASS** |
+| `yaw` | `[0.0, 0.0, 0.40]` | `+0.045 rad/s` | **`+0.075 rad/s`** | **`+66.7%` (improved)** | `tracking >= 0.08` | **PROGRESS** |
+| `strafe` | `[0.0, 0.12, 0.0]` | `+0.017 m/s` | **`+0.059 m/s`** | **`+247.1%` (improved)** | `tracking >= 0.08` | **PROGRESS** |
+| `backward` | `[-0.12, 0.0, 0.0]` | `-0.012 m/s` | **`-0.017 m/s`** | **`+41.7%` (improved)** | `tracking <= -0.08` | **PROGRESS** |
+| `forward` | `[0.15, 0.0, 0.0]` | `+0.011 m/s` | **`+0.044 m/s`** | **`+300.0%` (improved)** | `tracking >= 0.10` | **PROGRESS** |
+
+**Skill Retention Verdict**:
+- Not a single arrow-key skill degraded.
+- Yaw tracking improved by **+66.7%**, strafe by **+247.1%**, backward by **+41.7%**, and forward by **+300.0%**.
+- Standing stability remained above gate threshold at **97.58%** ($\ge 95\%$).
+- The two-group curriculum architecture successfully prevented the flat-ground skills from being trained away while developing terrain navigation.
+
+---
+
+### D. Honest Go / No-Go Verdicts
+
+#### 1. Long Stage 2 Training Run (Full 1500-Iteration Chunks): **GO (`VERIFIED`)**
+- **Evidence**:
+  1. **Zero early termination on target levels**: 100.0% survival across all 7 terrain types at deployment target levels (levels $\le 3$ stairs, $\le 4$ others).
+  2. **Elimination of stuck behavior**: Stuck fraction (<20% progress) dropped from **100.0%** on the baseline to **0.0%** across all cells.
+  3. **Progress ratio acceleration**: Overall evaluation progress ratio improved from **5.6%** to **58.0%** on flat, **55.5%** on slopes, **55.1%** on stairs, and **52.8%** on boxes within 600 iterations.
+  4. **Skill preservation**: Two-group distribution prevented skill loss; flat agility improved across all metrics.
+  5. The 600-iteration probe confirmed numerical stability, absence of NaN/Inf faults, and smooth curriculum advancement. A full 1500-iteration chunk is required to push progress ratios past the 70% gate.
+
+#### 2. Deployment to the Real Physical Robot: **NO-GO (`VERIFIED`)**
+- **Evidence & Blockers**:
+  1. **Progress ratio below gate**: Evaluation progress ratio sits between 43%–58% (gate requires $\ge 70\%$ in every type).
+  2. **Torque saturation**: Evaluation walking torque saturation is 7.8%–11.4% (gate requires $\le 2.0\%$).
+  3. **Hardware safety prerequisites missing**:
+     - No real-time hardware telemetry pipeline implemented or bench-tested.
+     - No physical IMU sign and axis calibration test executed on the physical robot chassis.
+     - No hardware emergency-stop (E-stop) power cut-off or software watchdog verified on the onboard Jetson.
+  - **Verdict**: Real robot deployment is strictly prohibited until full training chunks reach the $\ge 70\%$ progress gate and hardware safety/telemetry infrastructure is completed and verified.
+
+---
+
+### E. Exact Chunked Stage 2 Training Commands
+
+Stage 2 should be executed in **1500-iteration chunks** with `scripts/terrain_check.py` run after each chunk:
+
+```bash
+# =============================================================================
+# STAGE 2 — CHUNK 1 (1500 iterations, warm-started from Stage 1 Chunk 1)
+# =============================================================================
+/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/rsl_rl/train.py \
+  --task Zoe-Hexapod-Terrain-v0 \
+  --checkpoint logs/rsl_rl/zoe_hexapod_deploy/2026-11-09_22-33-44/model_1499.pt \
+  --num_envs 1024 \
+  --max_iterations 1500 \
+  --headless
+
+# Verify Chunk 1 against deployment gate and skill retention:
+/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/terrain_check.py \
+  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2999.pt \
+  --label "Stage 2 Chunk 1 (1500 iters)"
+
+# =============================================================================
+# STAGE 2 — CHUNK 2 (1500 iterations, resumed from Stage 2 Chunk 1)
+# =============================================================================
+/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/rsl_rl/train.py \
+  --task Zoe-Hexapod-Terrain-v0 \
+  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2999.pt \
+  --num_envs 1024 \
+  --max_iterations 1500 \
+  --headless
+
+# Verify Chunk 2:
+/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/terrain_check.py \
+  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK2_RUN_DIR>/model_4499.pt \
+  --label "Stage 2 Chunk 2 (3000 iters)"
+```
+
+#### Abort Criteria for Future Chunks
+1. **Automatic Watchdog Abort (Iteration 150)**: `train.py` aborts if `mean_episode_length < 100`, `time_out < 5%`, or `mean_reward` is lower than at iteration 0.
+2. **Progress Ratio Plateau**: Abort if evaluation progress ratio fails to reach $\ge 60\%$ after Chunk 1 or regresses between chunks.
+3. **Target Survival Degradation**: Abort if survival at deployment target levels drops below $90.0\%$ on any terrain type.
+4. **Skill Degradation**: Abort if standing stability drops below $95\%$ or any velocity tracking metric degrades by $> 10\%$ relative to `probe1_skills.json`.
+5. **Policy Exploration Destabilization**: Abort if `Policy/mean_noise_std` exceeds $0.50$.
+
+
 
