@@ -1093,3 +1093,54 @@ Skipped
   - *(Note: 1-3 cm swing clearance is flat ground only.)*
 
 ---
+
+## Chunk Check Run - 2026-11-11 22:08:22
+- **Git Commit**: `5693d4d`
+- **Checkpoint**: `/home/rithwik/SpdrBot-main/logs/rsl_rl/zoe_hexapod_deploy/2026-11-11_18-50-08/model_599.pt`
+- **Overall Verdict**: **FAIL**
+
+### Gate Results (Frozen Thresholds - Task 5 Amendment)
+| Condition | Metric | Measured | Threshold | Result |
+|---|---|---|---|---|
+| 1. Zero Command | Base height >= 0.1275m | 100.00% frames | >= 95% | **PASS** |
+| 1. Zero Command | >= 5 feet in contact | 96.79% frames | >= 95% | **PASS** |
+| 1. Zero Command | Non-foot contact | 0.00% frames | < 1% | **PASS** |
+| 2. Forward Walk 0.15m/s | Base height >= 0.1275m | 100.00% frames | >= 90% | **PASS** |
+| 2. Forward Walk 0.15m/s | >= 3 feet in contact | 99.42% frames | >= 99% | **PASS** |
+| 2. Forward Walk 0.15m/s | Non-foot contact | 0.00% frames | < 1% | **PASS** |
+| 2. Forward Walk 0.15m/s | Static stability margin (p5) | p5 0.0415m (mean 0.0934m, min -0.0273m) | p5 >= 0.0m | **PASS** |
+| 2. Forward Walk 0.15m/s | Forward speed (>= 80% tracking) | 0.0066 m/s | >= 0.1200 m/s (80% of 0.15m/s) | **FAIL** |
+| 3. Push Recovery | Terminations (falls) | 0 falls | 0 falls | **PASS** |
+| 3. Push Recovery | Non-foot contact | 0.00% frames | < 1% | **PASS** |
+| 3. Push Recovery | Push 1 Height Recovery (t=3..5s) | 100.00% frames >= 0.1275m | >= 90% | **PASS** |
+| 3. Push Recovery | Push 2 Height Recovery (t=6..8s) | 100.00% frames >= 0.1275m | >= 90% | **PASS** |
+| 4. Pure Yaw 0.40 rad/s | Yaw rate tracking (>= 50%) | +0.1819 rad/s (45.5%) | >= 0.2000 rad/s (50%) | **FAIL** |
+| 5. Strafe 0.12 m/s | Lateral velocity tracking (>= 50%) | +0.0877 m/s (73.1%) | >= 0.0600 m/s (50%) | **PASS** |
+| 6. Backward Walk -0.12 m/s | Backward velocity tracking (>= 50%) | -0.0527 m/s (43.9%) | <= -0.0600 m/s (50%) | **FAIL** |
+
+### Report-Only Diagnostics
+- **Torque Saturation (>= 2.45 N.m)**:
+  - C1 (Zero Cmd): `12.23%` | C2 (Forward Walk): `12.99%` | C3 (Push Recovery): `13.70%`
+- **Forward Walk (C2) Stance Torques**:
+  - Coxa: mean `0.369 N.m`, RMS `0.542 N.m`
+  - Thigh: mean `1.061 N.m`, RMS `1.343 N.m`
+  - Foot: mean `1.303 N.m`, RMS `1.618 N.m`
+- **Forward Walk (C2) Support Polygon**:
+  - >= 4 feet in contact: `97.45%` frames
+  - >= 3 feet in contact: `99.42%` frames
+- **Dedicated Pure-Yaw Test (cmd 0.40 rad/s, 5.0s)**:
+  - Yaw Rate: `+0.1819 rad/s` (45.5% tracking)
+  - Mean Feet Down: `4.94 / 6.0`
+  - Torque Saturation: `12.12%`
+  - Joint Limit Proximity (<=3 deg): Coxa `0.00%`, Thigh `0.00%`, Foot `0.00%`
+- **Strafe Tracking (cmd 0.12 m/s, 3.0s)**:
+  - Strafe Velocity: `+0.0877 m/s` (73.1% tracking)
+- **Backward Tracking (cmd -0.12 m/s, 3.0s)**:
+  - Backward Velocity: `-0.0527 m/s` (43.9% tracking)
+- **Forward Walk Joint Limit Proximity (<=3 deg)**:
+  - Coxa: `0.00%` | Thigh: `0.00%` | Foot: `0.00%`
+- **Swing Clearance per Leg (Condition 2 Forward Walk)**:
+  - L1: 2.08cm, L2: 2.02cm, L3: 2.04cm, L4: 2.06cm, L5: 2.98cm, L6: 2.07cm
+  - *(Note: 1-3 cm swing clearance is flat ground only.)*
+
+---
