@@ -171,9 +171,9 @@ class ZoeEventParams:
 @dataclass
 class ZoeRewardParams:
     track_lin_vel_xy_exp: float = 2.0
-    track_ang_vel_z_exp: float = 1.0  # Probe A (P1 baseline weight)
+    track_ang_vel_z_exp: float = 1.25  # Probe B (Probe 4 weight with fewer_than_3=-0.5)
     track_lin_vel_std: float = 0.13  # Width ~0.13 m/s so standing still earns <= 25% reward at 0.15 m/s cmd
-    track_ang_vel_std: float = 0.25  # Probe A (P1 baseline std)
+    track_ang_vel_std: float = 0.40  # Probe B (Probe 4 widened std across yaw commands up to 0.6 rad/s)
     termination_penalty: float = -200.0
     dof_torques_l2: float = -5e-3
     action_rate_l2: float = -0.05
