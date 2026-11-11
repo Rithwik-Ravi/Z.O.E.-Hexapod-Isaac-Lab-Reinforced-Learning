@@ -457,6 +457,7 @@ def test_flat_env_wires_penalty_scale_ramp():
     curr_src = ast.get_source_segment(source, curr_cls)
     flat_src = ast.get_source_segment(source, flat_cls)
     assert "penalty_scale" in curr_src and "penalty_scale_ramp" in curr_src
-    assert "curriculum: FlatCurriculumCfg" in flat_src
+    # Stage 1 runs fixed penalties from iter 0 (FlatCurriculumCfg retained for opt-in/docs, disabled on default cfg)
+    assert "curriculum: FlatCurriculumCfg" not in flat_src
 
 

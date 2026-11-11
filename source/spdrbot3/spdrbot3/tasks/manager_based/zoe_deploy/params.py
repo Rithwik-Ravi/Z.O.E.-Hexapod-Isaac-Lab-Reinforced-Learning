@@ -171,7 +171,7 @@ class ZoeEventParams:
 @dataclass
 class ZoeRewardParams:
     track_lin_vel_xy_exp: float = 2.0
-    track_ang_vel_z_exp: float = 1.5  # Boosted from 1.0 (with std=0.40) so pure-yaw gradient overcomes foot-pivot/slip resistance
+    track_ang_vel_z_exp: float = 1.25  # Balanced turning weight (with std=0.40) while keeping linear 2.0 clearly primary
     track_lin_vel_std: float = 0.13  # Width ~0.13 m/s so standing still earns <= 25% reward at 0.15 m/s cmd
     track_ang_vel_std: float = 0.40  # Widened from 0.25 to avoid exp saturation across yaw commands up to 0.6 rad/s
     termination_penalty: float = -200.0

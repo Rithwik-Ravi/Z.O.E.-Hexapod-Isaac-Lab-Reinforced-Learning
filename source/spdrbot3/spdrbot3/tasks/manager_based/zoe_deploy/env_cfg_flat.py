@@ -490,7 +490,8 @@ class ZoeHexapodFlatDeployEnvCfg(ManagerBasedRLEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
-    curriculum: FlatCurriculumCfg = FlatCurriculumCfg()
+    # Keep Stage 1 penalties fixed from iteration 0 (curriculum = None inherited from ManagerBasedRLEnvCfg):
+    # Probes P4 & P3 showed FlatCurriculumCfg's 800-iter 0.1->1.0 ramp plateaued mean_reward after it100 and left noise_std ~0.60.
 
     def __post_init__(self):
         self.decimation = 4
