@@ -6,7 +6,7 @@ mass_status: MEASURED_CAD_PLUS_BASE_PAYLOAD
 assumed_masses:
   assumed_total_robot_kg: 5.000
   base_payload_added_kg: 0.8338  # Battery (3S LiPo ~200g) + Jetson/Carrier (~280g) + PDB/buck (~80g) + ESP32s/cables (~70g) + hardware/harness (~200g)
-  mass_randomization_scale_range: [0.90, 1.10]
+  mass_randomization_scale_range: [0.80, 1.10]
   feasibility_sweep_masses_kg: [4.0, 5.0, 6.0]
 
 cad_asset_masses:
