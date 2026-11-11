@@ -51,6 +51,7 @@ from spdrbot3.tasks.manager_based.zoe_deploy.mdp.rewards import height_above_gro
 
 GATE_MIN_HEIGHT = ZOE_PARAMS.GATE_MIN_HEIGHT
 TORQUE_SAT_THRESHOLD = ZOE_PARAMS.TORQUE_SAT_THRESHOLD_NM
+EFFORT_80_THRESHOLD = 0.80 * ZOE_PARAMS.EFFORT_LIMIT_NM
 
 
 def compute_foot_tip_positions(robot, foot_ids, foot_names=None):
@@ -226,6 +227,18 @@ def run_chunk_check():
     c2_thigh_tau_sq_sum = 0.0
     c2_foot_tau_abs_sum = 0.0
     c2_foot_tau_sq_sum = 0.0
+    c2_feet_down_sum = 0.0
+    c2_feet_lt3_count = 0
+    c2_feet_eq3_count = 0
+    c2_feet_eq4_count = 0
+    c2_feet_eq5_count = 0
+    c2_feet_eq6_count = 0
+    c2_leg_contact_steps = torch.zeros(6, dtype=torch.long)
+    c2_over80_joint_steps = 0
+    c2_over80_frames = 0
+    c2_coxa_over80_steps = 0
+    c2_thigh_over80_steps = 0
+    c2_foot_over80_steps = 0
     max_swing_clearance_per_env_leg = torch.zeros((args_cli.num_envs, 6), device=args_cli.device)
 
     stability_margins = []
@@ -249,6 +262,13 @@ def run_chunk_check():
             feet_down = in_contact.sum(dim=1)
             c2_feet_pass += (feet_down >= 3).sum().item()
             c2_feet_ge_4_count += (feet_down >= 4).sum().item()
+            c2_leg_contact_steps += in_contact.sum(dim=0).cpu()
+            c2_feet_down_sum += feet_down.sum().item()
+            c2_feet_lt3_count += (feet_down < 3).sum().item()
+            c2_feet_eq3_count += (feet_down == 3).sum().item()
+            c2_feet_eq4_count += (feet_down == 4).sum().item()
+            c2_feet_eq5_count += (feet_down == 5).sum().item()
+            c2_feet_eq6_count += (feet_down == 6).sum().item()
 
             if non_foot_ids:
                 non_foot_forces = torch.norm(contact_sensor.data.net_forces_w[:, non_foot_ids, :], dim=-1)
@@ -257,6 +277,12 @@ def run_chunk_check():
             torq_raw = robot.data.applied_torque
             torq_abs = torch.abs(torq_raw)
             c2_torque_sat_count += (torq_abs >= TORQUE_SAT_THRESHOLD).sum().item()
+            over80 = torq_abs > EFFORT_80_THRESHOLD
+            c2_over80_joint_steps += over80.sum().item()
+            c2_over80_frames += over80.any(dim=1).sum().item()
+            c2_coxa_over80_steps += over80[:, coxa_ids].sum().item()
+            c2_thigh_over80_steps += over80[:, thigh_ids].sum().item()
+            c2_foot_over80_steps += over80[:, foot_ids_joints].sum().item()
             c2_coxa_tau_abs_sum += torq_abs[:, coxa_ids].sum().item()
             c2_coxa_tau_sq_sum += (torq_raw[:, coxa_ids] ** 2).sum().item()
             c2_thigh_tau_abs_sum += torq_abs[:, thigh_ids].sum().item()
@@ -319,6 +345,26 @@ def run_chunk_check():
     c2_foot_mean_tau = c2_foot_tau_abs_sum / c2_total_type_joint_steps
     c2_foot_rms_tau = math.sqrt(c2_foot_tau_sq_sum / c2_total_type_joint_steps)
 
+    c2_leg_duty_frac = c2_leg_contact_steps.float() / float(c2_total_frames)
+    c2_leg_duty_pct = (c2_leg_duty_frac * 100.0).tolist()
+    c2_tripod_a_mean = float(c2_leg_duty_frac[[0, 2, 4]].mean().item())
+    c2_tripod_b_mean = float(c2_leg_duty_frac[[1, 3, 5]].mean().item())
+    c2_tripod_diff_pp = abs(c2_tripod_a_mean - c2_tripod_b_mean) * 100.0
+    c2_min_leg_duty = float(c2_leg_duty_frac.min().item())
+    c2_check16_pass = (c2_min_leg_duty >= 0.40) and (abs(c2_tripod_a_mean - c2_tripod_b_mean) <= 0.15)
+
+    c2_mean_feet_down = c2_feet_down_sum / c2_total_frames
+    c2_feet_lt3_pct = 100.0 * c2_feet_lt3_count / c2_total_frames
+    c2_feet_eq3_pct = 100.0 * c2_feet_eq3_count / c2_total_frames
+    c2_feet_eq4_pct = 100.0 * c2_feet_eq4_count / c2_total_frames
+    c2_feet_eq5_pct = 100.0 * c2_feet_eq5_count / c2_total_frames
+    c2_feet_eq6_pct = 100.0 * c2_feet_eq6_count / c2_total_frames
+    c2_over80_joint_pct = 100.0 * c2_over80_joint_steps / c2_total_joint_steps
+    c2_over80_frame_pct = 100.0 * c2_over80_frames / c2_total_frames
+    c2_coxa_over80_pct = 100.0 * c2_coxa_over80_steps / c2_total_type_joint_steps
+    c2_thigh_over80_pct = 100.0 * c2_thigh_over80_steps / c2_total_type_joint_steps
+    c2_foot_over80_pct = 100.0 * c2_foot_over80_steps / c2_total_type_joint_steps
+
     mean_margin = float(np.mean(stability_margins)) if stability_margins else -1.0
     min_margin = float(np.min(stability_margins)) if stability_margins else -1.0
     p5_margin = float(np.percentile(stability_margins, 5)) if stability_margins else -1.0
@@ -357,6 +403,16 @@ def run_chunk_check():
         "measured": f"{c2_mean_speed:.4f} m/s",
         "threshold": ">= 0.1200 m/s (80% of 0.15m/s)",
         "pass": c2_mean_speed >= 0.120,
+    })
+    results.append({
+        "cond": "2. Forward Walk 0.15m/s",
+        "metric": "Check #16: Leg duty >= 40% & tripod diff <= 15pp",
+        "measured": (
+            f"min {c2_min_leg_duty * 100.0:.1f}%, diff {c2_tripod_diff_pp:.1f}pp "
+            f"(A:{c2_tripod_a_mean * 100.0:.1f}%, B:{c2_tripod_b_mean * 100.0:.1f}%)"
+        ),
+        "threshold": "min >= 40.0% & diff <= 15.0pp",
+        "pass": c2_check16_pass,
     })
     # Note: Torque saturation is REPORT-ONLY (principled gate amendment Task 5)
 
@@ -580,6 +636,7 @@ def run_chunk_check():
     full_table = "\n".join([table_header, table_divider] + table_rows)
 
     swing_str = ", ".join([f"L{i+1}: {c2_swing_clearance_cm[i]:.2f}cm" for i in range(6)])
+    duty_str = ", ".join([f"L{i+1}: {c2_leg_duty_pct[i]:.1f}%" for i in range(6)])
 
     print("\n" + "=" * 90)
     print("                     CHUNK CHECK GATE EVALUATION SUMMARY")
@@ -592,12 +649,15 @@ def run_chunk_check():
     print(f"    - Condition 2 (Forward Walk): {c2_torque_sat_pct:.2f}% joint-steps")
     print(f"    - Condition 3 (Push Recovery): {c3_torque_sat_pct:.2f}% joint-steps")
     print(f"  Forward Walk (C2) Joint Torques (5.0 kg):")
-    print(f"    - Coxa : mean |tau| = {c2_coxa_mean_tau:.3f} N.m, RMS tau = {c2_coxa_rms_tau:.3f} N.m")
-    print(f"    - Thigh: mean |tau| = {c2_thigh_mean_tau:.3f} N.m, RMS tau = {c2_thigh_rms_tau:.3f} N.m")
-    print(f"    - Foot : mean |tau| = {c2_foot_mean_tau:.3f} N.m, RMS tau = {c2_foot_rms_tau:.3f} N.m")
-    print(f"  Forward Walk (C2) Contact Distribution:")
-    print(f"    - >= 4 feet in contact: {c2_ge_4_feet_pct:.2f}% frames")
-    print(f"    - >= 3 feet in contact: {c2_feet_pct:.2f}% frames")
+    print(f"    - Coxa : mean |tau| = {c2_coxa_mean_tau:.3f} N.m, RMS tau = {c2_coxa_rms_tau:.3f} N.m, >80% ({EFFORT_80_THRESHOLD:.2f} N.m): {c2_coxa_over80_pct:.2f}%")
+    print(f"    - Thigh: mean |tau| = {c2_thigh_mean_tau:.3f} N.m, RMS tau = {c2_thigh_rms_tau:.3f} N.m, >80% ({EFFORT_80_THRESHOLD:.2f} N.m): {c2_thigh_over80_pct:.2f}%")
+    print(f"    - Foot : mean |tau| = {c2_foot_mean_tau:.3f} N.m, RMS tau = {c2_foot_rms_tau:.3f} N.m, >80% ({EFFORT_80_THRESHOLD:.2f} N.m): {c2_foot_over80_pct:.2f}%")
+    print(f"    - >80% Effort ({EFFORT_80_THRESHOLD:.2f} N.m): {c2_over80_joint_pct:.2f}% joint-steps | {c2_over80_frame_pct:.2f}% frames (any joint)")
+    print(f"  Forward Walk (C2) Contact & Duty Breakdown:")
+    print(f"    - Mean feet down: {c2_mean_feet_down:.2f} / 6.0 (>=4ft: {c2_ge_4_feet_pct:.2f}%, >=3ft: {c2_feet_pct:.2f}%)")
+    print(f"    - Feet counts   : <3: {c2_feet_lt3_pct:.2f}%, 3ft: {c2_feet_eq3_pct:.2f}%, 4ft: {c2_feet_eq4_pct:.2f}%, 5ft: {c2_feet_eq5_pct:.2f}%, 6ft: {c2_feet_eq6_pct:.2f}%")
+    print(f"    - Per-leg duty  : {duty_str}")
+    print(f"    - Tripod duty   : A(1,3,5)={c2_tripod_a_mean * 100.0:.1f}%, B(2,4,6)={c2_tripod_b_mean * 100.0:.1f}%, diff={c2_tripod_diff_pp:.1f}pp, min={c2_min_leg_duty * 100.0:.1f}%")
     print(f"  Dedicated Pure-Yaw (0.40 rad/s) : {mean_yaw_wz:+.4f} rad/s ({yaw_tracking_pct:.1f}%), Feet: {mean_yaw_feet_down:.2f}/6, TorqSat: {yaw_torque_sat_pct:.2f}%")
     print(f"  Pure-Yaw Joint Proximity (<=3 deg): Coxa: {yaw_coxa_prox_pct:.2f}%, Thigh: {yaw_thigh_prox_pct:.2f}%, Foot: {yaw_foot_prox_pct:.2f}%")
     print(f"  Strafe Tracking (0.12 m/s)      : {mean_strafe_vy:+.4f} m/s ({strafe_tracking_pct:.1f}%)")
@@ -625,13 +685,16 @@ def run_chunk_check():
 ### Report-Only Diagnostics
 - **Torque Saturation (>= {TORQUE_SAT_THRESHOLD:.2f} N.m)**:
   - C1 (Zero Cmd): `{c1_torque_sat_pct:.2f}%` | C2 (Forward Walk): `{c2_torque_sat_pct:.2f}%` | C3 (Push Recovery): `{c3_torque_sat_pct:.2f}%`
-- **Forward Walk (C2) Stance Torques**:
-  - Coxa: mean `{c2_coxa_mean_tau:.3f} N.m`, RMS `{c2_coxa_rms_tau:.3f} N.m`
-  - Thigh: mean `{c2_thigh_mean_tau:.3f} N.m`, RMS `{c2_thigh_rms_tau:.3f} N.m`
-  - Foot: mean `{c2_foot_mean_tau:.3f} N.m`, RMS `{c2_foot_rms_tau:.3f} N.m`
-- **Forward Walk (C2) Support Polygon**:
-  - >= 4 feet in contact: `{c2_ge_4_feet_pct:.2f}%` frames
-  - >= 3 feet in contact: `{c2_feet_pct:.2f}%` frames
+- **Forward Walk (C2) Stance Torques (>80% = >{EFFORT_80_THRESHOLD:.2f} N.m)**:
+  - Coxa: mean `{c2_coxa_mean_tau:.3f} N.m`, RMS `{c2_coxa_rms_tau:.3f} N.m`, >80%: `{c2_coxa_over80_pct:.2f}%`
+  - Thigh: mean `{c2_thigh_mean_tau:.3f} N.m`, RMS `{c2_thigh_rms_tau:.3f} N.m`, >80%: `{c2_thigh_over80_pct:.2f}%`
+  - Foot: mean `{c2_foot_mean_tau:.3f} N.m`, RMS `{c2_foot_rms_tau:.3f} N.m`, >80%: `{c2_foot_over80_pct:.2f}%`
+  - Overall >80% effort: `{c2_over80_joint_pct:.2f}%` joint-steps | `{c2_over80_frame_pct:.2f}%` frames (any joint)
+- **Forward Walk (C2) Support Polygon & Duty**:
+  - Mean feet down: `{c2_mean_feet_down:.2f} / 6.0` (>= 4ft: `{c2_ge_4_feet_pct:.2f}%`, >= 3ft: `{c2_feet_pct:.2f}%`)
+  - Feet counts: `<3: {c2_feet_lt3_pct:.2f}%` | `3ft: {c2_feet_eq3_pct:.2f}%` | `4ft: {c2_feet_eq4_pct:.2f}%` | `5ft: {c2_feet_eq5_pct:.2f}%` | `6ft: {c2_feet_eq6_pct:.2f}%`
+  - Per-leg duty: {duty_str}
+  - Tripod duty: A(1,3,5)=`{c2_tripod_a_mean * 100.0:.1f}%`, B(2,4,6)=`{c2_tripod_b_mean * 100.0:.1f}%`, diff=`{c2_tripod_diff_pp:.1f}pp`, min=`{c2_min_leg_duty * 100.0:.1f}%`
 - **Dedicated Pure-Yaw Test (cmd 0.40 rad/s, 5.0s)**:
   - Yaw Rate: `{mean_yaw_wz:+.4f} rad/s` ({yaw_tracking_pct:.1f}% tracking)
   - Mean Feet Down: `{mean_yaw_feet_down:.2f} / 6.0`
