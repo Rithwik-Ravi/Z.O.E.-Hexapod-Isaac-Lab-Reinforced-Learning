@@ -394,7 +394,7 @@ def test_penalty_scale_ramp():
 
     # Step 0 (iteration 0): scale must be 0.10
     env.common_step_counter = 0
-    scale_0 = penalty_scale_ramp(env)
+    scale_0 = penalty_scale_ramp(env, None)
     assert abs(scale_0 - 0.10) < 1e-4
     assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-0.20)) < 1e-4
     assert abs(env.reward_manager.get_term_cfg("fewer_than_4_feet_contact").weight - (-0.005)) < 1e-4
@@ -402,29 +402,38 @@ def test_penalty_scale_ramp():
 
     # Step 19200 (iteration 400 = 19200 / 48): scale must be 0.10 + 0.90 * (400 / 800) = 0.55
     env.common_step_counter = 19200
-    scale_400 = penalty_scale_ramp(env)
+    scale_400 = penalty_scale_ramp(env, None)
     assert abs(scale_400 - 0.55) < 1e-4
     assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-1.10)) < 1e-4
     assert abs(env.extras["log"]["Curriculum/penalty_scale"] - 0.55) < 1e-4
 
     # Step 38400 (iteration 800 = 38400 / 48): scale must be 1.00
     env.common_step_counter = 38400
-    scale_800 = penalty_scale_ramp(env)
+    scale_800 = penalty_scale_ramp(env, None)
     assert abs(scale_800 - 1.00) < 1e-4
     assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-2.00)) < 1e-4
     assert abs(env.extras["log"]["Curriculum/penalty_scale"] - 1.00) < 1e-4
 
     # Step 48000 (iteration 1000): clamped at 1.00
     env.common_step_counter = 48000
-    scale_1000 = penalty_scale_ramp(env)
+    scale_1000 = penalty_scale_ramp(env, None)
     assert abs(scale_1000 - 1.00) < 1e-4
     assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-2.00)) < 1e-4
 
 
 def test_flat_env_wires_penalty_scale_ramp():
-    """Verify env_cfg_flat.py wires penalty_scale = CurrTerm(func=zoe_mdp.penalty_scale_ramp) cleanly."""
+    """Verify env_cfg_flat.py wires penalty_scale = CurrTerm(func=zoe_mdp.penalty_scale_ramp) and matches CurriculumManager signature."""
     import ast
+    import inspect
     import os
+    from spdrbot3.tasks.manager_based.zoe_deploy.mdp.curriculum import penalty_scale_ramp
+
+    # Mirror Isaac Lab ManagerBase._resolve_common_term_cfg(..., min_argc=2)
+    args = inspect.signature(penalty_scale_ramp).parameters
+    args_with_defaults = [arg for arg in args if args[arg].default is not inspect.Parameter.empty]
+    args_without_defaults = [arg for arg in args if args[arg].default is inspect.Parameter.empty]
+    ordered = args_without_defaults + args_with_defaults
+    assert set(ordered[2:]) == set(args_with_defaults)
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     cfg_path = os.path.join(

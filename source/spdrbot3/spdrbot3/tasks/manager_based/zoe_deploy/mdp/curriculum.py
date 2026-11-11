@@ -252,7 +252,7 @@ PENALTY_RAMP_TERMS: list[tuple[str, ...]] = [
 
 def penalty_scale_ramp(
     env: ManagerBasedRLEnv,
-    env_ids: Sequence[int] | None = None,
+    env_ids: Sequence[int] | None,
     num_steps_per_env: int = 48,
     max_iter: float = 800.0,
     min_scale: float = 0.1,
