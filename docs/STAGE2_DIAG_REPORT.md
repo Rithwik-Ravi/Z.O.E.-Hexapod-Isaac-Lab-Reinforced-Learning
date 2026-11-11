@@ -241,11 +241,11 @@ To isolate whether the failure originates in the task wiring/rewards or in the t
 
 | Rank | Root Cause Hypothesis | Evidence & Mechanism | Confidence | Status |
 |---|---|---|---|---|
-| **1** | **`base_height_shaped` Uses Absolute World Z Instead of Relative Height** | `root_z = robot.data.root_pos_w[:, 2]` in `rewards.py:101`. On negative terrain tiles ($z_{\text{origin}} = -0.68\text{ m}$), $z_{\text{world}} = -0.51\text{ m}$, generating a massive **`-68.30` per-step penalty**. The policy discovered that flipping over immediately (dying in 22 steps) saves tens of thousands of negative penalty points compared to staying upright. | **100%** | **VERIFIED** |
-| **2** | **Cold Start from Scratch Instead of Warm-Start** | `agent.yaml` has `resume: False`. `get_checkpoint_path` looked in `logs/rsl_rl/zoe_hexapod_terrain/` instead of `zoe_hexapod_deploy/`. The policy started with random weights $\sigma=1.0$ directly on complex terrain. | **100%** | **VERIFIED** |
-| **3** | **`max_init_terrain_level = None` Spawns at Level 5–9 Immediately** | `env_cfg_terrain.py:26` leaves `max_init_terrain_level = None`, which distributes initial spawns uniformly across all difficulty levels (mean level 5.06). Untrained robots were dropped into steep pits and 6cm steps on Step 0. | **100%** | **VERIFIED** |
-| **4** | **Curriculum Measures Distance from World `(0, 0, 0)`** | `curriculum.py:62` computes `norm(root_pos_w[:, :2])` instead of subtracting `env_origins`. Robots on outer tiles are recorded as having walked 36 meters on step 0, making the demotion check `distance < min_dist` permanently False. Stuck robots can never demote. | **100%** | **VERIFIED** |
-| **5** | **Right-Sided Action Asymmetry Trap** | Under severe height penalty and random exploration, the policy latched onto an asymmetric local minimum where left thighs retract ($-1.6\text{ rad}$) and right thighs push ($+1.865\text{ rad}$, $\Delta = 3.47\text{ rad}$), slamming the robot into a $-130.3^\circ$ rightward roll every episode. | **100%** | **VERIFIED** |
+| **1** | **`base_height_shaped` Uses Absolute World Z Instead of Relative Height** | `root_z = robot.data.root_pos_w[:, 2]` in `rewards.py:101`. On negative terrain tiles ($z_{\text{origin}} = -0.68\text{ m}$), $z_{\text{world}} = -0.51\text{ m}$, generating a massive **`-68.30` per-step penalty**. The policy discovered that flipping over immediately (dying in 22 steps) saves tens of thousands of negative penalty points compared to staying upright. | High (`VERIFIED`) | **VERIFIED** |
+| **2** | **Cold Start from Scratch Instead of Warm-Start** | `agent.yaml` has `resume: False`. `get_checkpoint_path` looked in `logs/rsl_rl/zoe_hexapod_terrain/` instead of `zoe_hexapod_deploy/`. The policy started with random weights $\sigma=1.0$ directly on complex terrain. | High (`VERIFIED`) | **VERIFIED** |
+| **3** | **`max_init_terrain_level = None` Spawns at Level 5–9 Immediately** | `env_cfg_terrain.py:26` leaves `max_init_terrain_level = None`, which distributes initial spawns uniformly across all difficulty levels (mean level 5.06). Untrained robots were dropped into steep pits and 6cm steps on Step 0. | High (`VERIFIED`) | **VERIFIED** |
+| **4** | **Curriculum Measures Distance from World `(0, 0, 0)`** | `curriculum.py:62` computes `norm(root_pos_w[:, :2])` instead of subtracting `env_origins`. Robots on outer tiles are recorded as having walked 36 meters on step 0, making the demotion check `distance < min_dist` permanently False. Stuck robots can never demote. | High (`VERIFIED`) | **VERIFIED** |
+| **5** | **Right-Sided Action Asymmetry Trap** | Under severe height penalty and random exploration, the policy latched onto an asymmetric local minimum where left thighs retract ($-1.6\text{ rad}$) and right thighs push ($+1.865\text{ rad}$, $\Delta = 3.47\text{ rad}$), slamming the robot into a $-130.3^\circ$ rightward roll every episode. | High (`VERIFIED`) | **VERIFIED** |
 
 ---
 
@@ -385,52 +385,23 @@ To isolate whether the failure originates in the task wiring/rewards or in the t
 
 ---
 
-### 5. Readiness Verdict & Warm-Start Assessment
+### 5. Historical B3 Probe Assessment (Superseded — See Section 7 Amendment)
 
-1. **Is Stage 2 (`Zoe-Hexapod-Terrain-v0`) ready for a long training run?**
-   - **YES (`VERIFIED`, Confidence: 100%)**. All 5 root causes from the diagnosis have been eliminated and verified by unit tests and GPU probes. Within 600 warm-started iterations, the robot achieves `99.94%` timeout survival during training, climbs the terrain curriculum from mean level `0.51` to `8.44 / 9.0`, and passes `scripts/terrain_check.py` with `100.0%` survival across all 7 terrain types (`flat`, `rough`, `slope_up`, `slope_down`, `stairs_up`, `stairs_down`, `boxes`) at levels `0, 2, 4, 6, 9`.
-2. **Is the 600-iteration flat probe (`logs/rsl_rl/zoe_hexapod_deploy/2026-11-05_19-51-02/model_599.pt`) an acceptable warm start, or should Stage 1 Chunk 1 finish first?**
-   - **For multi-terrain locomotion and curriculum progression (`VERIFIED`, Confidence: 100%)**: `model_599.pt` is already a proven, high-performing warm start. Starting from `model_599.pt`, B3 Probe 2 (`model_1198.pt`) already satisfies the B4 deployment survival gate (`>= 90%` survival across all 7 terrain types at levels `<= 4`, achieving `100.0%` across `0..9`).
-   - **For hardware deployment readiness (`VERIFIED` + `INFERRED`, Confidence: 95%)**: Neither `model_599.pt` (`10.19%` walking torque saturation) nor `model_1198.pt` (`9.59%` walking torque saturation) passes the frozen Stage 1 dynamic walking torque saturation gate (`<= 2.0%`), and `ZoeTerrainCommandsCfg` narrows `lin_vel_y` and `ang_vel_z` ranges to prioritize straight tile traversal (`report-only strafe = +0.0169 m/s` on `model_1198.pt` vs `+0.1147 m/s` on `model_599.pt`). Therefore, if you want a **hardware-deployable** multi-terrain policy with omnidirectional command tracking and minimal torque saturation, you should **finish Stage 1 Chunk 1 first** (or warm-start Stage 2 from the completed Stage 1 Chunk 1 checkpoint).
+1. **Historical 2026-11-07 B3 Probe status (`VERIFIED`, pre-5.0 kg payload update)**:
+   - All 5 root causes from the Stage 2 flipping diagnosis were fixed (`A1–A6`). In the 2026-11-07 B3 probe (`2026-11-07_22-49-47/model_1198.pt`, warm-started from `2026-11-05_19-51-02/model_599.pt`), survival reached `99.94%` during training and `100.0%` across `levels 0, 2, 4, 6, 9` on `scripts/terrain_check.py`.
+   - **Superseded by later asset & metric fixes (`2026-11-11`)**: That B3 probe ran under the `4.1662 kg` CAD mass before the `+0.8338 kg` (`5.0000 kg`) payload update (`b58c52c`), with forward-biased `ZoeTerrainCommandsCfg` (`report-only strafe = +0.0169 m/s`), and before Task 6 exposed inflation in the step-integrated progress metric. Note also that Task 5 (`52685d4`) moved Stage 1 torque saturation (`10.19%` on `model_599.pt`, `9.59%` on `model_1198.pt`) from a pass/fail gate to report-only and added mandatory directional velocity gates.
+2. **Current Readiness Summary (`VERIFIED`)**:
+   - **Stage 2 is `NO-GO` / `NOT READY` for long chunk training** until a `5.00 kg` Stage 1 policy passes all 15 frozen conditions in `scripts/chunk_check.py`. Wait for Stage 1 Chunk 1 to pass before running Stage 2.
 
 ---
 
-### 6. Chunked Stage 2 Training Commands & Abort Criteria
+### 6. Chunked Stage 2 Invocation Reference & Abort Criteria
 
-Run Stage 2 in **1500-iteration chunks** with `scripts/terrain_check.py` and `scripts/chunk_check.py` between chunks. Replace `<STAGE1_CHECKPOINT_PATH>` with your chosen Stage 1 checkpoint (e.g., `logs/rsl_rl/zoe_hexapod_deploy/2026-11-05_19-51-02/model_599.pt` or your completed Stage 1 Chunk 1 checkpoint):
+When (and only after) a Stage 1 `5.00 kg` policy passes the frozen 15-condition gate in `scripts/chunk_check.py`, launch Stage 2 via `scripts/rsl_rl/train.py --task Zoe-Hexapod-Terrain-v0 --checkpoint path/to/passing_stage1_ckpt.pt --num_envs 1024 --max_iterations 1500 --headless`, and evaluate each resulting run checkpoint with:
+- `scripts/terrain_check.py --checkpoint path/to/terrain_ckpt.pt --headless`
+- `scripts/chunk_check.py --task Zoe-Hexapod-Flat-Deploy-v0 --checkpoint path/to/terrain_ckpt.pt --headless`
 
-```bash
-# =============================================================================
-# STAGE 2 — CHUNK 1 (1500 iterations, warm-started from Stage 1 checkpoint)
-# =============================================================================
-/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/rsl_rl/train.py \
-  --task Zoe-Hexapod-Terrain-v0 \
-  --checkpoint <STAGE1_CHECKPOINT_PATH> \
-  --num_envs 1024 \
-  --max_iterations 1500 \
-  --headless
-
-# Verify Chunk 1 on multi-terrain gate (levels 0,2,4,6,9) and Stage 1 flat gate:
-/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/terrain_check.py \
-  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2098.pt \
-  --label "Stage 2 Chunk 1" \
-  --headless
-
-/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/chunk_check.py \
-  --task Zoe-Hexapod-Flat-Deploy-v0 \
-  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2098.pt \
-  --headless
-
-# =============================================================================
-# STAGE 2 — CHUNK 2 (1500 iterations, resumed from Stage 2 Chunk 1)
-# =============================================================================
-/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/rsl_rl/train.py \
-  --task Zoe-Hexapod-Terrain-v0 \
-  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2098.pt \
-  --num_envs 1024 \
-  --max_iterations 1500 \
-  --headless
-```
+See Section 7.E for current blocking prerequisites.
 
 #### Stage 2 Abort Criteria
 1. **Automatic Watchdog Abort (Iteration 150, Exit Code `3`)**: `train.py` automatically aborts at iteration 150 if `mean_episode_length < 100`, `time_out < 5%`, or `mean_reward` is lower than at iteration 0.
@@ -444,11 +415,18 @@ Run Stage 2 in **1500-iteration chunks** with `scripts/terrain_check.py` and `sc
 
 ## 7. Stage 2 Multi-Group & Terrain Ceiling Verification (Parts A–F)
 
-**Date**: 2026-11-10  
+> [!WARNING]
+> **2026-11-11 RETRACTION (`VERIFIED`)**: The `GO` verdict originally issued in this section on `2026-11-10` is **RETRACTED**. Two defects invalidated `model_2098.pt`'s apparent `43%–58%` progress:
+> 1. `model_2098.pt` was warm-started from `logs/rsl_rl/zoe_hexapod_deploy/2026-11-09_22-33-44/model_1499.pt`, which was later proved to be a Stage 1 creeper (`0.0065 m/s` forward speed).
+> 2. Part A's step-integrated metric ($\sum \max(0, \mathbf{v}_{xy} \cdot \hat{\mathbf{cmd}}_{xy})\Delta t$) credited zero-net-motion shuffling in place.
+>
+> After fixing the metric to world-frame **net displacement** (`(pos_end_w - pos_start_w)[:2] . unit(cmd_dir_w)` with full 3D `root_quat_w` rotation and pre-reset position capture, commits `1462e4f`, `5cfc643`, `dbe0b49`), `model_2098.pt` achieved only **`flat 32.2%`**, **`rough 8.7%`** (`94.9%` stuck), **`slope_up 31.6%`**, **`slope_down 28.2%`**, **`stairs_up 26.1%`**, **`stairs_down 17.0%`** (`76.9%` stuck), and **`boxes 25.4%`** — **100% `FAIL`**. Tables A–C below are retained as historical Part F records under the old metric alongside this retraction.
+
+**Date**: 2026-11-10 (Amended 2026-11-11)  
 **Evaluated Run**: `logs/rsl_rl/zoe_hexapod_terrain/2026-11-10_18-11-19` (600 iterations, ended `model_2098.pt`)  
-**Warm-Start Source**: Stage 1 Chunk 1 final checkpoint (`logs/rsl_rl/zoe_hexapod_deploy/2026-11-09_22-33-44/model_1499.pt`)  
+**Warm-Start Source**: Stage 1 Chunk 1 final checkpoint (`logs/rsl_rl/zoe_hexapod_deploy/2026-11-09_22-33-44/model_1499.pt` — invalid creeper baseline)  
 **Architecture Upgrades Evaluated**:
-1. **Part A (Curriculum Progress Accounting)**: Step-integrated distance $\sum \max(0, \mathbf{v}_{xy} \cdot \hat{\mathbf{cmd}}_{xy})\Delta t$ along commanded direction. Standing envs protect level; command reversals preserve progress; early terminations demote.
+1. **Part A (Curriculum Progress Accounting)**: Originally implemented as step-integrated distance $\sum \max(0, \mathbf{v}_{xy} \cdot \hat{\mathbf{cmd}}_{xy})\Delta t$; replaced in Task 6 (`1462e4f`, `5cfc643`) by world-frame net displacement `(pos_end_w - pos_start_w)[:2] . unit(cmd_dir_w)`. Standing envs protect level; command reversals preserve progress; early terminations demote.
 2. **Part B (Two Env Groups)**: 50% Group T (Traversal: 20s held episode, $v_x \in [0.10, 0.25], v_y \in [-0.10, 0.10], \omega_z \in [-0.30, 0.30]$, full levels 0–9) + 50% Group S (Skills: Stage 1 distribution, 3–5s resampling, 10% standing, $\ge 25\%$ yaw-dominant, backward allowed, level capped at 3).
 3. **Part C (Extended Terrain Difficulty Ceiling)**: Stairs up/down 9 cm, boxes 7 cm, slopes 0.40 rad, rough 4.5 cm. Frozen deployment targets: stairs $\le 4\text{ cm}$ (Level 3), slopes $\le 12^\circ$ (Level 4), boxes $\le 4\text{ cm}$ (Level 4), rough $\le 2.5\text{ cm}$ (Level 4).
 4. **Part D (Evaluation Suite)**: `scripts/terrain_check.py` measuring survival, progress ratio, stuck fraction (<20%), torque saturation, and 5-skill retention test against warm-start baseline.
@@ -542,69 +520,37 @@ Evaluated on 143 environments across flat tiles and levels 0–2 of slopes and r
 
 ---
 
-### D. Honest Go / No-Go Verdicts
+### D. Honest Go / No-Go Verdicts (Amended 2026-11-11)
 
-#### 1. Long Stage 2 Training Run (Full 1500-Iteration Chunks): **GO (`VERIFIED`)**
+#### 1. Long Stage 2 Training Run (Full 1500-Iteration Chunks): **NO-GO / `NOT READY` (`VERIFIED`, Previous `GO` Retracted)**
 - **Evidence**:
-  1. **Zero early termination on target levels**: 100.0% survival across all 7 terrain types at deployment target levels (levels $\le 3$ stairs, $\le 4$ others).
-  2. **Elimination of stuck behavior**: Stuck fraction (<20% progress) dropped from **100.0%** on the baseline to **0.0%** across all cells.
-  3. **Progress ratio acceleration**: Overall evaluation progress ratio improved from **5.6%** to **58.0%** on flat, **55.5%** on slopes, **55.1%** on stairs, and **52.8%** on boxes within 600 iterations.
-  4. **Skill preservation**: Two-group distribution prevented skill loss; flat agility improved across all metrics.
-  5. The 600-iteration probe confirmed numerical stability, absence of NaN/Inf faults, and smooth curriculum advancement. A full 1500-iteration chunk is required to push progress ratios past the 70% gate.
+  1. **Invalid warm-start source**: `model_1499.pt` (`2026-11-09_22-33-44`) crept at `0.0065 m/s` forward, `10.0%` yaw, and `19.1%` strafe (`NEW` Stage 2 progress `2.2%–2.9%`, 100% FAIL).
+  2. **Historical `43%–58%` probe numbers were step-integrated artifacts**: Under Task 6's world-frame net-displacement metric (`1462e4f`, `5cfc643`, `dbe0b49`), `model_2098.pt` scored **`flat 32.2%`**, **`rough 8.7%`** (`94.9%` stuck), **`slope_up 31.6%`**, **`slope_down 28.2%`**, **`stairs_up 26.1%`**, **`stairs_down 17.0%`** (`76.9%` stuck), and **`boxes 25.4%`** — **100% FAIL** against the `>= 70%` target gate.
+  3. **Zero Stage 1 `5.00 kg` passing warm-start exists yet**: The best of 4 Stage 1 probes (`2026-11-11_22-30-05/model_599.pt`, `9662a60`) reached `13/15 PASS`, still failing Forward (`0.0079 m/s` vs `>= 0.1200 m/s`) and Strafe (`+0.0420 m/s = 35.0%` vs `>= 50%`).
+  4. **Historical baseline cross-check (`2026-11-05_19-51-02/model_599.pt`, Task 6 `NEW` metric)**: `flat 102.5%`, `rough 53.3%`, `slope_up 106.4%`, `slope_down 90.3%`, `stairs_up 98.1%`, `stairs_down 37.1%`, `boxes 63.1%` (`FAIL` on rough, stairs_down, boxes), proving the `NEW` metric accurately distinguishes real locomotion from shuffling.
 
 #### 2. Deployment to the Real Physical Robot: **NO-GO (`VERIFIED`)**
 - **Evidence & Blockers**:
-  1. **Progress ratio below gate**: Evaluation progress ratio sits between 43%–58% (gate requires $\ge 70\%$ in every type).
-  2. **Torque saturation**: Evaluation walking torque saturation is 7.8%–11.4% (gate requires $\le 2.0\%$).
-  3. **Hardware safety prerequisites missing**:
-     - No real-time hardware telemetry pipeline implemented or bench-tested.
-     - No physical IMU sign and axis calibration test executed on the physical robot chassis.
+  1. **Both Stage 1 and Stage 2 fail evaluation gates**: Stage 1 (`13/15 PASS` best of 4 probes) and Stage 2 (`8.7%–32.2%` `NEW` net-displacement progress vs `>= 70%` gate) are unready. (Torque saturation is now report-only under Task 5 `52685d4`, measured at `7.78%–10.41%` on `model_599.pt` of Probe 4.)
+  2. **Hardware safety prerequisites missing**:
+     - No real-time hardware telemetry or servo feedback pipeline implemented/bench-tested.
+     - No physical IMU sign/axis test or mechanical joint-zero calibration executed on the physical robot chassis; robot weight (`5.00 kg` assumption) unverified on a scale.
      - No hardware emergency-stop (E-stop) power cut-off or software watchdog verified on the onboard Jetson.
-  - **Verdict**: Real robot deployment is strictly prohibited until full training chunks reach the $\ge 70\%$ progress gate and hardware safety/telemetry infrastructure is completed and verified.
+  - **Verdict**: Both Stage 2 long training and real robot deployment remain strictly blocked.
 
 ---
 
-### E. Exact Chunked Stage 2 Training Commands
+### E. Prerequisites Before Launching Stage 2 Chunks
 
-Stage 2 should be executed in **1500-iteration chunks** with `scripts/terrain_check.py` run after each chunk:
-
-```bash
-# =============================================================================
-# STAGE 2 — CHUNK 1 (1500 iterations, warm-started from Stage 1 Chunk 1)
-# =============================================================================
-/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/rsl_rl/train.py \
-  --task Zoe-Hexapod-Terrain-v0 \
-  --checkpoint logs/rsl_rl/zoe_hexapod_deploy/2026-11-09_22-33-44/model_1499.pt \
-  --num_envs 1024 \
-  --max_iterations 1500 \
-  --headless
-
-# Verify Chunk 1 against deployment gate and skill retention:
-/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/terrain_check.py \
-  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2999.pt \
-  --label "Stage 2 Chunk 1 (1500 iters)"
-
-# =============================================================================
-# STAGE 2 — CHUNK 2 (1500 iterations, resumed from Stage 2 Chunk 1)
-# =============================================================================
-/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/rsl_rl/train.py \
-  --task Zoe-Hexapod-Terrain-v0 \
-  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK1_RUN_DIR>/model_2999.pt \
-  --num_envs 1024 \
-  --max_iterations 1500 \
-  --headless
-
-# Verify Chunk 2:
-/home/rithwik/miniconda3/envs/env_isaaclab/bin/python scripts/terrain_check.py \
-  --checkpoint logs/rsl_rl/zoe_hexapod_terrain/<CHUNK2_RUN_DIR>/model_4499.pt \
-  --label "Stage 2 Chunk 2 (3000 iters)"
-```
+Do **NOT** start Stage 2 training (`Zoe-Hexapod-Terrain-v0`) until all of the following are true (`VERIFIED`):
+1. **Stage 1 passes the frozen 15-condition gate**: A `5.00 kg` `Zoe-Hexapod-Flat-Deploy-v0` checkpoint passes all 15 PASS/FAIL checks in `scripts/chunk_check.py` (including Forward `>= 0.1200 m/s`, Pure Yaw `>= 50%`, Strafe `>= 50%`, Backward `>= 50%`).
+2. **Valid Stage 2 probe check**: Warm-start a 600-iteration Stage 2 probe from that passing Stage 1 checkpoint (or its 1500-iteration Chunk 1 continuation) and evaluate with `scripts/terrain_check.py` (verifying Task 6 net-displacement progress and zero skill regression) before committing to 1500-iteration Stage 2 chunks.
 
 #### Abort Criteria for Future Chunks
 1. **Automatic Watchdog Abort (Iteration 150)**: `train.py` aborts if `mean_episode_length < 100`, `time_out < 5%`, or `mean_reward` is lower than at iteration 0.
-2. **Progress Ratio Plateau**: Abort if evaluation progress ratio fails to reach $\ge 60\%$ after Chunk 1 or regresses between chunks.
+2. **Progress Ratio Plateau**: Abort if net-displacement progress fails to rise meaningfully above the Stage 1 warm-start or regresses between chunks.
 3. **Target Survival Degradation**: Abort if survival at deployment target levels drops below $90.0\%$ on any terrain type.
-4. **Skill Degradation**: Abort if standing stability drops below $95\%$ or any velocity tracking metric degrades by $> 10\%$ relative to `probe1_skills.json`.
+4. **Skill Degradation**: Abort if standing stability drops below $95\%$ or any flat velocity tracking gate regresses on `scripts/chunk_check.py`.
 5. **Policy Exploration Destabilization**: Abort if `Policy/mean_noise_std` exceeds $0.50$.
 
 

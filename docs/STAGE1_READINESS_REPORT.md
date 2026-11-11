@@ -1,149 +1,137 @@
-# Stage 1 Readiness & Verification Report: `Zoe-Hexapod-Flat-Deploy-v0` (Chunk 1)
+# Stage 1 & Deployment Readiness Report
 
-**Date**: 2026-11-09  
-**Git Commit**: `2df368c`  
-**Task**: `Zoe-Hexapod-Flat-Deploy-v0` (Stage 1 Flat Terrain Locomotion)  
-**Run Directory**: `logs/rsl_rl/zoe_hexapod_deploy/2026-11-09_22-33-44/`  
-**Evaluated Checkpoints**: `model_500.pt`, `model_1000.pt`, `model_1499.pt` (1500 iterations total)  
-**Overall Stage 1 Gate Verdict**: **FAIL ON FROZEN CRITERIA** (Forward speed $0.0065\text{ m/s}$ vs $\ge 0.120\text{ m/s}$; Torque saturation $6.33\%$ vs $\le 2.0\%$)  
-**Locomotion Quality & Safety Verdict**: **ULTRA-STABLE 6-LEG CREEPING & STANDING; STATICS TENSION AT 5.0 KG**  
+- **Date**: 2026-11-11
+- **Repository Baseline**: Branch `main`, code state `9662a60` / evaluation log `744ea37` (plus documentation & `deploy/mass_properties.yaml` updates)
+- **Active Environment / Robot Asset**: `Zoe-Hexapod-Flat-Deploy-v0` (`5.0000 kg` payload model in `hexapod/hexa/configuration/hexa_physics.usd`, settled standing height `0.1417 m`, target `0.1346 m`, minimum `0.1275 m`)
 
 ---
 
-## 1. Summary of Changes Since Previous Stage 1 Probes
+## Executive Verdicts
 
-1. **New Asset Integration & Mass Calibration**:
-   - Switched to new CAD model (`hexa_ir`): CAD raw links total $4.1662\text{ kg}$ (with servos embedded in CAD links: `NTHIGH` $0.2155\text{ kg}$, `NFOOT` $0.0467\text{ kg}$, `NCCUP` $0.0150\text{ kg}$).
-   - Added $0.8338\text{ kg}$ payload mass directly to `base_link` ($3.3365\text{ kg}$) in `hexapod/hexa/configuration/hexa_physics.usd` and `hexapod/hexa.urdf` to represent real-world battery (~200g), Jetson carrier (~280g), PDB/buck (~80g), ESP32 boards & wiring (~70g), and standoffs/harness (~200g).
-   - Strictly verified asset mass: **$5.0000\text{ kg}$** ($\pm 0.05\text{ kg}$ assertion verified via `scripts/audit_asset.py`).
-2. **Torque Saturation Penalty Recalibration**:
-   - Servos: Waveshare ST3215 12V variant ($2.94\text{ N}\cdot\text{m}$ stall torque at 12V nominal, 12V direct 3S LiPo battery, effort limit $2.50\text{ N}\cdot\text{m}$).
-   - Set soft torque limit $\tau_{\text{soft}} = 1.95\text{ N}\cdot\text{m}$ (above the $1.880\text{ N}\cdot\text{m}$ static tripod holding torque, avoiding penalties during quiescent standing) with penalty weight $-2.0$.
-3. **Yaw-Dominant Command Sampling**:
-   - Created `ZoeUniformVelocityCommand` and `ZoeUniformVelocityCommandCfg` in `source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/mdp/commands.py`.
-   - Guaranteed that $\ge 25\%$ (configured to $30\%$) of non-standing environments receive yaw-dominant commands ($|\omega_z| \in [0.30, 0.60]\text{ rad/s}$ with small linear drift $|v_{xy}| \le 0.05\text{ m/s}$).
-   - Increased yaw reward weight `track_ang_vel_z_exp` from $0.5$ to $1.0$ in `params.py`.
-4. **Enhanced Report-Only Gate Suite (`scripts/chunk_check.py`)**:
-   - Added joint-limit proximity ($\le 3^\circ$) for coxa, thigh, and foot.
-   - Added per-leg swing clearance ($L_1..L_6$) during Condition 2 walking.
-   - Added dedicated 5.0s pure-yaw test ($v_{xy} = 0, \omega_z = 0.40\text{ rad/s}$).
-   - Kept all gate thresholds frozen.
+| Scope | Verdict | Basis (`VERIFIED`) |
+|---|---|---|
+| **Stage 1 (`Zoe-Hexapod-Flat-Deploy-v0`) Frozen 15-Condition Gate (`scripts/chunk_check.py`, `52685d4`)** | **`FAIL` (`NOT READY`)** | Best of 4 GPU probes (`1024` envs, `600` iters, from scratch): **Probe 4** (`2026-11-11_22-30-05/model_599.pt`) scored **`13/15 PASS`**, failing `Forward` (`0.0079 m/s` vs `>= 0.1200 m/s`, `80%` of `0.15 m/s`) and `Strafe` (`+0.0420 m/s = 35.0%` vs `>= 0.0600 m/s`, `50%` of `0.12 m/s`). Per the strict GPU budget (`<= 4` probes; 1500-iter Chunk 1 only if a probe passes), no 5th probe and no Chunk 1 run were started. |
+| **Stage 2 (`Zoe-Hexapod-Terrain-v0`)** | **`NOT READY` (Previous `GO` Retracted)** | The earlier Stage 2 `GO` verdict rested on a Stage 2 probe (`2026-11-10_18-11-19/model_2098.pt`) warm-started from the Stage 1 Chunk-1 creeper (`model_1499.pt`) and evaluated with the inflated step-integrated progress metric. Under Task 6's fixed world-frame net-displacement metric (`1462e4f`, `5cfc643`, `dbe0b49`), `model_2098.pt` failed all 7 terrains (`flat 32.2%`, `rough 8.7%`, `slope_up 31.6%`, `slope_down 28.2%`, `stairs_up 26.1%`, `stairs_down 17.0%`, `boxes 25.4%`). |
+| **Physical Hardware Sim-to-Real Deployment** | **`NO-GO`** | No Stage 1 policy passes the frozen Stage 1 gate; furthermore the physical platform has no onboard IMU, no joint servo position/velocity/torque feedback, uncalibrated mechanical joint zeros, no hardware E-stop, and an unweighed physical mass (`5.00 kg` is a calibrated assumption). |
 
 ---
 
-## 2. Gate Verification Table Across Chunk 1 Checkpoints
+## 1. Task 1: Exact Diff Between Walking Baseline (`2026-11-05_19-51-02`) and Chunk-1 Creeper (`2026-11-09_22-33-44`)
 
-All evaluations were executed with 128 parallel environments on frozen thresholds via [`scripts/chunk_check.py`](file:///home/rithwik/SpdrBot-main/scripts/chunk_check.py):
+`2026-11-05_19-51-02/model_599.pt` (`600` iters) walked at **`0.1518 m/s`** (`tripod_corr -0.7527`). Chunk 1 (`2026-11-09_22-33-44/model_1499.pt`, `1500` iters) crept at **`0.0065 m/s`** (`4.3%` of `0.15 m/s`), `Pure Yaw +0.0400 rad/s (10.0%)`, and `Strafe +0.0230 m/s (19.1%)`.
 
-| Condition | Metric | Threshold | Iteration 500 (`model_500.pt`) | Iteration 1000 (`model_1000.pt`) | Iteration 1500 (`model_1499.pt`) | Trend / Final Result |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **1. Zero Command** | Base Height $\ge 0.1275\text{ m}$ | $\ge 95\%$ | $100.00\%$ | $100.00\%$ | $100.00\%$ | **PASS** (Rock solid) |
-| **1. Zero Command** | $\ge 5$ Feet in Contact | $\ge 95\%$ | $98.28\%$ | $98.33\%$ | $98.34\%$ | **PASS** (Zero sag) |
-| **1. Zero Command** | Non-foot Contact | $< 1\%$ | $0.00\%$ | $0.00\%$ | $0.00\%$ | **PASS** (Zero body drag) |
-| **1. Zero Command** | Torque Saturation ($|\tau| \ge 2.45\text{ N}\cdot\text{m}$) | $\le 2\%$ | $3.32\%$ | $2.54\%$ | **$2.15\%$** | **FAIL** (Substantial drop: $3.3\% \to 2.1\%$) |
-| **2. Forward Walk** | Base Height $\ge 0.1275\text{ m}$ | $\ge 90\%$ | $100.00\%$ | $100.00\%$ | $100.00\%$ | **PASS** (100% upright) |
-| **2. Forward Walk** | $\ge 3$ Feet in Contact | $\ge 99\%$ | $99.40\%$ | $99.42\%$ | $99.40\%$ | **PASS** (Continuous support) |
-| **2. Forward Walk** | Non-foot Contact | $< 1\%$ | $0.00\%$ | $0.00\%$ | $0.00\%$ | **PASS** (Zero body contact) |
-| **2. Forward Walk** | Static Stability Margin ($p5$) | $p5 \ge 0.0\text{ m}$ | $+0.1142\text{ m}$ | $+0.0801\text{ m}$ | **$+0.0718\text{ m}$** | **PASS** (COM fully enclosed) |
-| **2. Forward Walk** | Forward Speed | $\ge 0.120\text{ m/s}$ | $0.0022\text{ m/s}$ | $0.0049\text{ m/s}$ | **$0.0065\text{ m/s}$** | **FAIL** (Robot creeps/freezes) |
-| **2. Forward Walk** | Torque Saturation ($|\tau| \ge 2.45\text{ N}\cdot\text{m}$) | $\le 2\%$ | $5.36\%$ | $6.75\%$ | **$6.33\%$** | **FAIL** (Down from 14.25% in Probe 6) |
-| **3. Push Recovery**| Terminations (Falls) | $0\text{ falls}$ | $0\text{ falls}$ | $0\text{ falls}$ | **$0\text{ falls}$** | **PASS** (Zero falls in all tests) |
-| **3. Push Recovery**| Non-foot Contact | $< 1\%$ | $0.00\%$ | $0.00\%$ | $0.00\%$ | **PASS** |
-| **3. Push Recovery**| Push 1 Recovery ($t=3..5\text{s}$) | $\ge 90\%$ | $100.00\%$ | $100.00\%$ | $100.00\%$ | **PASS** (Instant recovery) |
-| **3. Push Recovery**| Push 2 Recovery ($t=6..8\text{s}$) | $\ge 90\%$ | $100.00\%$ | $100.00\%$ | **$99.86\%$** | **PASS** (Instant recovery) |
-| **3. Push Recovery**| Torque Saturation ($|\tau| \ge 2.45\text{ N}\cdot\text{m}$) | $\le 2\%$ | $5.76\%$ | $7.10\%$ | **$6.65\%$** | **FAIL** |
-| **OVERALL GATE** | **All 15 Conditions** | **100% PASS**| **FAIL** | **FAIL** | **FAIL** | **FAIL** |
+Exact parameter & asset changes between the two configs (`VERIFIED`):
+
+| Category | `2026-11-05_19-51-02` (Walking) | Chunk 1 `2026-11-09_22-33-44` (Creeping) | Commit | Status |
+|---|---|---|---|---|
+| **Robot Total Mass (`hexa_physics.usd`)** | `4.1662 kg` CAD mass (before payload edit) | **`5.0000 kg`** (`+0.8338 kg` payload on `base_link`; settled height `0.1417 m`, target `0.1346 m`, min `0.1275 m`) | `b58c52c` | **CHANGED** |
+| **`torque_limit` Penalty** | Weight `-0.5`, soft threshold `2.10 N·m` | Weight **`-2.0`**, soft threshold **`1.95 N·m`** | `8bbb08d` | **CHANGED** |
+| **Velocity Command Distribution** | `UniformVelocityCommand` (standard uniform sampling) | **`ZoeUniformVelocityCommand`** (`rel_yaw_envs: 0.30`, `wz: 0.30..0.60`, `vx, vy: -0.05..0.05` on yaw envs) | `38cd329` | **CHANGED** |
+| **`track_ang_vel_z_exp` Weight** | `0.5` | **`1.0`** | `38cd329` | **CHANGED** |
+| **`max_iterations`** | `600` | **`1500`** | Chunk 1 CLI/cfg | **CHANGED** |
+| **Actuator Model** | `Kp=16.0`, `Kd=1.6`, `effort_limit=2.5 N·m` | `Kp=16.0`, `Kd=1.6`, `effort_limit=2.5 N·m` | — | **SAME** |
+| **Action Rate Limiter** | `6.0 deg/step` (`300 deg/s` at `50 Hz`) | `6.0 deg/step` (`300 deg/s` at `50 Hz`) | — | **SAME** |
+| **Action Delay** | `0..2` steps | `0..2` steps | — | **SAME** |
+| **Mass Domain Randomization** | `[0.90, 1.10]` | `[0.90, 1.10]` | — | **SAME** |
+
+*(Note: `[0.90, 1.10]` was kept in Chunk 1 and Probe `P1`, then expanded to `[0.80, 1.10]` in Task 7 [`6087218`, `d3da62c`] for Probes `P4`, `Probe 3`, and `Probe 4`.)*
 
 ---
 
-## 3. Report-Only Diagnostics & Trends Across Checkpoints
+## 2. Task 2: Simulator Reward Economics (`5.00 kg` Model)
 
-| Diagnostic Metric | Iteration 500 | Iteration 1000 | Iteration 1500 (`model_1499.pt`) | Target / Physical Context |
-| :--- | :---: | :---: | :---: | :--- |
-| **Dedicated Pure-Yaw ($\omega_z = 0.40\text{ rad/s}$)** | $+0.0264\text{ rad/s}$ ($6.6\%$) | $+0.0377\text{ rad/s}$ ($9.4\%$) | **$+0.0400\text{ rad/s}$ ($10.0\%$)** | Up from 6.4% in old model; single-env rollout reached **$+0.2049\text{ rad/s}$** |
-| **Pure-Yaw Mean Feet Grounded** | $5.89 / 6.0$ | $5.92 / 6.0$ | $5.92 / 6.0$ | Robot keeps nearly all feet planted |
-| **Pure-Yaw Torque Saturation** | $4.17\%$ | $2.86\%$ | **$2.71\%$** | Steady decrease toward the 2.0% boundary |
-| **Strafe Velocity ($v_y = 0.12\text{ m/s}$)** | $+0.0163\text{ m/s}$ ($13.6\%$) | $+0.0207\text{ m/s}$ ($17.2\%$) | **$+0.0230\text{ m/s}$ ($19.1\%$)** | Gradual increase |
-| **Joint Limit Proximity ($\le 3^\circ$, Coxa)** | $0.00\%$ | $0.00\%$ | **$0.00\%$** | Never near mechanical stop |
-| **Joint Limit Proximity ($\le 3^\circ$, Thigh)**| $0.00\%$ | $0.00\%$ | **$0.00\%$** | Never near mechanical stop |
-| **Joint Limit Proximity ($\le 3^\circ$, Foot)** | $0.00\%$ | $0.00\%$ | **$0.00\%$** | Never near mechanical stop |
-| **Swing Clearance $L_1$ (Leg 1)** | $1.99\text{ cm}$ | $2.07\text{ cm}$ | **$2.08\text{ cm}$** | *1–3 cm target (flat ground only)*: **MET** |
-| **Swing Clearance $L_2$ (Leg 2)** | $2.05\text{ cm}$ | $2.02\text{ cm}$ | **$2.04\text{ cm}$** | *1–3 cm target (flat ground only)*: **MET** |
-| **Swing Clearance $L_3$ (Leg 3)** | $2.05\text{ cm}$ | $2.02\text{ cm}$ | **$2.12\text{ cm}$** | *1–3 cm target (flat ground only)*: **MET** |
-| **Swing Clearance $L_4$ (Leg 4)** | $2.06\text{ cm}$ | $2.06\text{ cm}$ | **$2.12\text{ cm}$** | *1–3 cm target (flat ground only)*: **MET** |
-| **Swing Clearance $L_5$ (Leg 5)** | $2.05\text{ cm}$ | $2.06\text{ cm}$ | **$2.07\text{ cm}$** | *1–3 cm target (flat ground only)*: **MET** |
-| **Swing Clearance $L_6$ (Leg 6)** | $2.02\text{ cm}$ | $2.05\text{ cm}$ | **$2.07\text{ cm}$** | *1–3 cm target (flat ground only)*: **MET** |
+Measured directly in the Isaac Lab physics simulator using [`scripts/analysis/eval_reward_economics.py`](file:///home/rithwik/SpdrBot-main/scripts/analysis/eval_reward_economics.py) (`33d2e8c`, `VERIFIED`):
 
----
+### 2.1 Training Command Distribution Share
 
-## 4. Why Forward Speed Failed & The Statics Bottleneck
+Under Chunk-1's `ZoeUniformVelocityCommand` configuration (`VERIFIED`):
+- **`46.10%`** of training environments have translational command speed `|v_xy| < 0.10 m/s`:
+  - `7.00%` standing environments (`cmd = [0, 0, 0]`)
+  - `30.04%` yaw-dominant environments (`rel_yaw_envs`)
+  - `9.05%` uniform draws with `|v_xy| < 0.10 m/s`
 
-### 4.1 The Mechanism
-In Chunk 1, the policy converged to an **ultra-conservative, highly stable, 6-legged creeping / standing posture** ($v_x = 0.0065\text{ m/s}$):
-1. **Statics vs Penalty Threshold**:
-   A 5.0 kg hexapod resting horizontally with thigh lever arm $0.115\text{ m}$ requires:
-   $$\tau_{\text{tripod}} = \frac{5.0 \cdot 9.81 \cdot 0.115}{3} = 1.880\text{ N}\cdot\text{m}$$
-   The torque soft limit was set to $\tau_{\text{soft}} = 1.95\text{ N}\cdot\text{m}$ with penalty weight $-2.0$. The margin between static tripod holding and penalty trigger is only $0.07\text{ N}\cdot\text{m}$ ($3.6\%$).
-2. **Dynamic Penalty Overwhelming Forward Reward**:
-   Lifting 3 legs in an alternating tripod gait inevitably causes dynamic acceleration and impact torques above $2.0\text{--}2.4\text{ N}\cdot\text{m}$. With weight $-2.0$, this imposes a $-20\text{ to }-40\text{/s}$ penalty.
-   Conversely, keeping 5 to 6 legs planted divides the $49.05\text{ N}$ load across 6 legs:
-   $$\tau_{\text{6-leg}} = \frac{5.0 \cdot 9.81 \cdot 0.115}{6} = 0.940\text{ N}\cdot\text{m}$$
-   $0.940\text{ N}\cdot\text{m}$ is far below $1.95\text{ N}\cdot\text{m}$, incurring **zero torque penalty**.
-3. **Reward Landscape Optimization**:
-   The policy learned that by standing firm or creeping at $< 0.01\text{ m/s}$:
-   - Zero falls (avoids $-200$ penalty)
-   - Zero non-foot contacts (avoids $-1.0$ penalty)
-   - 100% height target achieved ($+50\text{/s}$)
-   - Low torque saturation ($2.15\%$)
-   - In 10% standing environments and 30% yaw environments, it collects substantial reward without needing to walk forward.
-   Hence, the optimizer chose stability and torque compliance over forward speed.
+### 2.2 Simulator Static Holding Torques (`5.00 kg`, Feet Planted vs Raised)
+
+| Support Stance | Settled Base Height (`m`) | Max Joint Torque `|tau|` (`N·m`) | Mean Thigh Torque (`N·m`) | `torque_limit` Penalty Metric (`> 1.95 N·m`) | `torque_limit` Penalty Metric (`> 2.10 N·m`) |
+|---|---|---|---|---|---|
+| **6 feet down** | `0.1416` | `1.751` | `1.180` | `0.0000` | `0.0000` |
+| **5 feet down** | — | `2.500` | `1.602` | `0.3839` | — |
+| **4 feet down** | — | `2.445` | `1.668` | `0.4370` | — |
+| **3 feet down (tripod)** | `0.1337` | `2.500` (at hard effort limit) | `2.313` | `1.4730` | `0.7716` |
+
+### 2.3 Per-Second Chunk-1 Reward Economics (`50 Hz`)
+
+Using the measured simulator static torques under Chunk-1 weights (`torque_limit: -2.0 @ 1.95 N·m`, `VERIFIED`):
+
+| Behavior / Command Speed | Per-Second Net Reward (`/s`) | Key Mechanism |
+|---|---|---|
+| **Standing still (`cmd = [0, 0, 0]`)** | **`+235.80 /s`** | Zero torque penalty (`0.0000`), high stillness/orientation/tracking reward |
+| **Freeze / Creep (6 feet down) at `0.10 / 0.15 / 0.25 m/s`** | **`+141.14` / `+112.22` / `+88.28 /s`** | Pays zero `torque_limit` penalty (`6ft max |tau| = 1.751 N·m < 1.95 N·m`) |
+| **Dynamic Tripod Walk (3 feet down) at `0.10 / 0.15 / 0.25 m/s`** | **`+46.84` / `+46.75` / `+46.45 /s`** | Incurs **`-147.30 /s`** `torque_limit` penalty (`-2.0 * 1.4730 * 50`), losing **`-94.30` / `-65.47` / `-41.83 /s`** relative to creeping |
+
+Conclusion (`VERIFIED`): At `5.00 kg`, Chunk-1's `-2.0 @ 1.95 N·m` `torque_limit` penalty made lifting 3 legs into a tripod stance strongly reward-negative compared to keeping all 6 feet planted.
 
 ---
 
-## 5. Honest Gate Verdicts
+## 3. Task 3 & Task 4: Bisection (`P1`) and Stage 1 Improvement Probes (`P4`, `Probe 3`, `Probe 4`)
 
-### Verdict (a): Continuing to 3000 iterations?
-> **VERDICT: NO (not without adjusting the reward/statics balance).**  
-> Continuing training for another 1500 iterations with the current reward formulation will merely solidify the creeping/standing minimum. The policy has already settled into a shallow loss basin ($V_{\text{loss}} \approx 0.05, S_{\text{loss}} \approx -0.013$) where creeping satisfies safety and torque penalties. 
+All 4 GPU probes used the fixed budget of `1024` environments, `600` iterations, trained **from scratch**, and evaluated on the frozen 15-condition gate in [`scripts/chunk_check.py`](file:///home/rithwik/SpdrBot-main/scripts/chunk_check.py) (`52685d4`, no thresholds modified).
 
-### Verdict (b): Starting Stage 2 Terrain?
-> **VERDICT: NO.**  
-> A policy that creeps at $0.0065\text{ m/s}$ on flat ground will instantly stall on terrain hurdles, $0.30$ slopes, and box stairs. Stage 2 curriculum requires vigorous stepping with active foot clearance.
+### 3.1 Probe Comparison Summary (`VERIFIED`)
 
-### Verdict (c): Putting Policy on Real Robot?
-> **VERDICT: ABSOLUTE NO.**  
-> Under no circumstances should this checkpoint be deployed to physical hardware:
-> 1. Real robot has no verified servo telemetry loop, IMU filtering pipeline, or physical emergency stop.
-> 2. Zero-calibration offsets on physical servos are unmeasured.
-> 3. The policy does not walk dynamically forward.
+| Run / Label | Key Config Delta | Frozen Gate Score | Forward (`>= 0.1200 m/s`) | Pure Yaw (`>= 50%`) | Strafe (`>= 50%`) | Backward (`>= 50%`) | Contacts (`>= 3ft` / `>= 5ft` ZeroCmd) | Stability `p5` (`>= 0.0 m`) | Notable TB / Gait Diagnostics |
+|---|---|---|---|---|---|---|---|---|---|
+| **Chunk 1 (`2026-11-09_22-33-44/model_1499.pt`)** | `torque -2.0@1.95`, `yaw 1.0`, `fewer_3 -0.5`, `rand [0.90, 1.10]` | Freeze baseline | **`0.0065 m/s`** | `+0.0400 rad/s (10.0%)` | `+0.0230 m/s (19.1%)` | — | — | — | Stuck in 6-foot creep |
+| **Probe 1 (`P1`, `06d4486`, `25e194f`, `2026-11-11_11-46-21/model_599.pt`)** | **ONLY** `torque_limit` reverted to `-0.5 @ 2.10 N·m`; no ramp; `[0.90, 1.10]` | **`12/15 PASS`** | **`0.1595 m/s` (PASS)** | `+0.1515 rad/s (37.9%)` (FAIL) | **`+0.1091 m/s (90.9%)` (PASS)** | **`-0.1148 m/s (95.7%)` (PASS)** | `>=3ft 95.70%` (FAIL) / `C1 >=5ft 98.38%` (PASS) | `-0.0156 m` (FAIL) | `tripod_corr -0.5049`, `Leg 5` `2.0%` duty (`38.41` TB reward), `C2 TorqSat 14.21%` |
+| **Probe 2 (`P4`, `a7882f2`, `9383efb`, `2026-11-11_16-01-30/model_599.pt`)** | `torque -1.0 @ 2.10`, **`penalty_scale_ramp` (`0.1->1.0 @ 800`)**, `[0.80, 1.10]` | **`11/15 PASS`** | `0.0940 m/s (62.7%)` (FAIL) | `+0.0358 rad/s (8.9%)` (FAIL) | `+0.0582 m/s (48.5%)` (FAIL) | **`-0.1186 m/s (98.8%)` (PASS)** | `>=3ft 98.83%` (FAIL) / `C1 >=5ft 97.09%` (PASS) | **`+0.0258 m` (PASS)** | Tripod A `65.2%` vs B `64.8%`, `corr -0.6980`, `5.55/6` feet on yaw, `C2 TorqSat 15.43%`; TB stalled (`26.30->21.11->26.04`, `noise_std 0.5936`, `action_rate_l2 -0.5279`) |
+| **Probe 3 (`5693d4d`, `bc040bb`, `2026-11-11_18-50-08/model_599.pt`)** | Ramp + **`rewards.py` yaw gating fix** + `torque -0.5 @ 2.10` + `yaw 1.5@0.40` + **`fewer_3 -1.0`**, `[0.80, 1.10]` | **`12/15 PASS`** | `0.0066 m/s` (FAIL) | `+0.1819 rad/s (45.5%)` (FAIL) | **`+0.0877 m/s (73.1%)` (PASS)** | `-0.0527 m/s (43.9%)` (FAIL) | **`>=3ft 99.42%` (PASS)** (`>=4ft 97.45%`) / `C1 >=5ft 96.79%` (PASS) | **`+0.0415 m` (PASS)** | `4.94/6` feet on yaw (`63.9%` on `0.50 rad/s` step), `C2 TorqSat 12.99%`; TB stalled (`35.21->33.20->35.98`, `noise_std 0.6196`, `action_rate_l2 -0.5950`) |
+| **Probe 4 (`9662a60`, `744ea37`, `2026-11-11_22-30-05/model_599.pt`)** | **NO ramp** + `rewards.py` yaw fix + `torque -0.5 @ 2.10` + `yaw 1.25@0.40` + `fewer_3 -1.0`, `[0.80, 1.10]` | **`13/15 PASS`** | `0.0079 m/s` (FAIL) | **`+0.2011 rad/s (50.3%)` (PASS)** | `+0.0420 m/s (35.0%)` (FAIL) | **`-0.1087 m/s (90.6%)` (PASS)** | **`>=3ft 99.41%` (PASS)** (`>=4ft 99.36%`) / `C1 >=5ft 98.33%` (PASS) | **`+0.0741 m` (PASS)** (`Push 100%` PASS) | Forward duty A `90.0%` / B `98.0%`, `corr -0.0253`, Yaw step `0.2599 rad/s` on `0.50`, `C2 TorqSat 9.51%`; TB monotonic (`-0.7028->18.2780->30.5465->40.7297`, `noise_std 0.4538`) |
+
+### 3.2 Key Mechanistic Findings From the 4 Probes
+
+1. **Chunk-1 Freeze Root Cause Confirmed (`P1`, `VERIFIED`)**: Reverting only `torque_limit` from `-2.0 @ 1.95 N·m` to `-0.5 @ 2.10 N·m` jumped forward speed **`24.5×`** (`0.0065 -> 0.1595 m/s`), so bisection stopped after `P1` per rule.
+2. **Yaw Gait-Gating Bug Fixed (`5693d4d`, `VERIFIED`)**: `feet_air_time_gated` and `foot_tip_clearance_reward` in `rewards.py` previously gated on `torch.norm(cmd[:, :2]) > 0.05`, withholding stepping/clearance reward during pure-yaw commands (`P4`: `8.9%` yaw, `5.55/6` feet planted). Updating the gate to `torch.norm(cmd[:, :2]) + torch.abs(cmd[:, 2]) > 0.05` plus `track_ang_vel_z_exp` `std=0.40` enabled `Probe 4` to achieve **`50.3%` Pure Yaw (`PASS`)**. Verified by unit test `test_stepping_rewards_active_on_pure_yaw_and_off_when_stopped` in [`tests/test_height_above_ground.py`](file:///home/rithwik/SpdrBot-main/tests/test_height_above_ground.py).
+3. **`penalty_scale_ramp` Stalled Exploration & Mid-Run Reward (`P4` & `Probe 3`, `VERIFIED`)**: Implementing Task 4's `0.1 -> 1.0` linear ramp over `800` iterations (`6bc0acd`) scaled `action_rate_l2` down early, allowing `Policy/mean_noise_std` to rise to `1.03–1.04` around iteration `100` while continuous negative penalty drift flattened `Train/mean_reward` (`P4`: `26.30 -> 26.04`; `Probe 3`: `35.21 -> 35.98`; `noise_std` stayed at `0.59–0.62`). Disabling the ramp in `Probe 4` (`9662a60`, leaving `FlatCurriculumCfg` / `penalty_scale_ramp` available in code/tests) restored monotonic learning (`-0.7028 -> 40.7297`, `noise_std -> 0.4538`).
+4. **Remaining Forward Suppression Mechanism (`INFERRED` from `VERIFIED` contrast)**: Every run with `fewer_than_3_feet_contact = -0.5` (`2026-11-05` at `0.1518 m/s`, `P1` at `0.1595 m/s`, `P4` at `0.0940 m/s` with `corr -0.6980`) actively alternated tripods forward, whereas both runs with `fewer_than_3_feet_contact = -1.0` (`Probe 3`: `97.45% >= 4ft`, `0.0066 m/s`; `Probe 4`: `99.36% >= 4ft`, `0.0079 m/s`, duty `90.0% / 98.0%`) kept `>= 4` feet planted forward to avoid transient `< 3`-foot penalties during tripod handover. **Recommended next candidate once GPU budget is renewed**: keep `9662a60` (no ramp, yaw gating fix, `yaw 1.25 @ 0.40`, `torque -0.5 @ 2.10`) and restore `fewer_than_3_feet_contact` from `-1.0` to **`-0.5`** (untested in this session).
 
 ---
 
-## 6. Real-Robot Measurement Checklist
+## 4. Task 5 (Frozen Gate) & Task 6 (Net-Displacement Progress Metric)
 
-Before any hardware deployment can be considered, the following physical measurements MUST be recorded on the real robot:
+### 4.1 Task 5 — Frozen Stage 1 Gate (`scripts/chunk_check.py`, `52685d4`, `VERIFIED`)
 
-1. **Physical Total Mass Measurement**:
-   - Place fully assembled robot (chassis, 18 servos, battery, Jetson Orin Nano, buck converters, cables, cameras) on a digital scale.
-   - Record exact total mass $M_{\text{real}}$. If $M_{\text{real}} \approx 3.2\text{--}3.8\text{ kg}$ rather than $5.0\text{ kg}$, holding torque drops to $1.20\text{--}1.43\text{ N}\cdot\text{m}$, eliminating the statics bottleneck.
-2. **Servo Stance Telemetry (18 Servos)**:
-   - Power up the robot in nominal standing posture with feet resting on the ground.
-   - Query each of the 18 Waveshare ST3215 servos via serial bus for:
-     - Raw position tick: $P_i \in [0, 4095]$
-     - Calculated angle in degrees / radians
-     - Present load / current: $I_i\text{ (mA)}$
-     - Operating voltage: $V_i\text{ (V)}$ (confirm whether servos see 11.4V–12.6V direct 3S LiPo).
-3. **Joint Sign & Direction Alignment**:
-   - For each leg (1 to 6) and each joint (coxa, thigh, foot), command a $+5^\circ$ positive displacement:
-     - Verify coxa rotates counter-clockwise viewed from top.
-     - Verify thigh elevates leg upward.
-     - Verify foot extends outward/downward.
-     - Document sign flips required in ROS 2 hardware bridge.
-4. **Mechanical Limit Verification**:
-   - Gently back-drive each joint by hand with power off to mechanical hard stops:
-     - Measure coxa mechanical stop range vs simulated $[\pm 45^\circ]$ ($\pm 0.785\text{ rad}$).
-     - Measure thigh mechanical stop range vs simulated $[\pm 90^\circ]$ ($\pm 1.571\text{ rad}$).
-     - Measure foot mechanical stop range vs simulated $[-\pi, 0]$ ($-3.1416\text{ to } 0\text{ rad}$).
-5. **Emergency Stop (E-Stop) & Safety Interlocks**:
-   - Implement physical hardware kill switch cutting battery power to the servo bus.
-   - Implement software watchdog in ROS 2 node cutting PWM / serial torque enable if heartbeat drops for $> 100\text{ ms}$.
+- Converted `C2 TorqSat` from hard pass/fail to **report-only** (reflecting legitimate dynamic walking spikes: in tripod stance at `5.0 kg`, static thigh torque is already `~1.88–2.31 N·m` vs `2.50 N·m` effort limit).
+- Added directional command tracking gates (**15 pass/fail checks total**), including `C1 >= 5` feet in contact (`>= 95%` on zero cmd), `C2 Forward >= 0.1200 m/s` (`>= 80%` of `0.15 m/s`), `C4 Pure Yaw >= 0.2000 rad/s` (`>= 50%` of `0.40 rad/s`), `C5 Strafe >= 0.0600 m/s` (`>= 50%` of `0.12 m/s`), and `C6 Backward <= -0.0600 m/s` (`>= 50%` of `-0.12 m/s`). All four probes were evaluated against this unchanged frozen gate.
+
+### 4.2 Task 6 — World-Frame Net-Displacement Progress Metric (`1462e4f`, `5cfc643`, `dbe0b49`, `VERIFIED`)
+
+The Stage 2 curriculum previously integrated instantaneous step progress (`sum max(0, v_xy . unit(cmd_xy)) dt`), which let policies accumulate high fake progress by shuffling or oscillating in place. Task 6 replaced it with net world-frame displacement `(pos_end_w - pos_start_w)[:2] . unit(cmd_dir_w)` using full 3D `root_quat_w` rotation and pre-reset `pos_end_w` capture.
+
+Exact `OLD` vs `NEW` progress across the 7 terrains (`dbe0b49`, `VERIFIED`):
+
+| Terrain | `2026-11-05/model_599.pt` (`NEW` / `OLD`) | Stage 1 Chunk-1 `model_1499.pt` (`NEW` / `OLD`) | Stage 2 Probe `model_2098.pt` (`NEW` / `OLD`) |
+|---|---|---|---|
+| **`flat`** | `102.5%` / `102.0%` | `2.3%` / `5.6%` | **`32.2%`** / `58.3%` |
+| **`rough`** | `53.3%` / `60.0%` | `2.9%` / `6.9%` | **`8.7%`** / `43.9%` (`94.9%` stuck) |
+| **`slope_up`** | `106.4%` / `105.7%` | `2.4%` / `6.0%` | **`31.6%`** / `57.1%` |
+| **`slope_down`** | `90.3%` / `94.0%` | `2.4%` / `5.7%` | **`28.2%`** / `56.6%` |
+| **`stairs_up`** | `98.1%` / `97.6%` | `2.4%` / `5.9%` | **`26.1%`** / `54.1%` |
+| **`stairs_down`** | `37.1%` / `51.4%` | `2.2%` / `5.8%` | **`17.0%`** / `46.2%` (`76.9%` stuck) |
+| **`boxes`** | `63.1%` / `69.0%` | `2.2%` / `5.8%` | **`25.4%`** / `53.4%` |
+| **Overall** | `FAIL` (rough / stairs_down / boxes) | `100% FAIL` | **`100% FAIL`** (old metric hid shuffling in place) |
+
+---
+
+## 5. Task 7: Mass Randomization `[0.80, 1.10]` & Payload Recalibration Tooling (`6087218`, `d3da62c`)
+
+- **Expanded Randomization Range (`params.py`, `deploy/mass_properties.yaml`, `docs/ASSUMPTIONS.md`, `VERIFIED`)**: Set multiplicative mass scale range to **`(0.80, 1.10)`** (`4.00–5.50 kg` around `5.000 kg`) so the trained policy spans lighter unloaded CAD configurations (`~4.17 kg`) through heavy payload configurations (`5.50 kg`).
+- **One-Command Recalibration Script (`scripts/set_payload_mass.py`, `VERIFIED`)**: Added CLI `--total-mass-kg` (default `5.000`) to recompute payload mass & inertia cleanly and synchronize `hexapod/hexa.urdf`, `deploy/mass_properties.yaml`, `deploy/asset_report.json`, and `hexapod/hexa/configuration/hexa_physics.usd` once the physical robot is weighed.
+
+---
+
+## 6. Task 9: Workspace & Package Hygiene Verification (`VERIFIED`)
+
+Executed directly in the Isaac Lab environment and git history:
+- `python -c "import spdrbot3; print(spdrbot3.__file__)"` -> `/home/rithwik/SpdrBot-main/source/spdrbot3/spdrbot3/__init__.py`
+- `pip show spdrbot3` -> `Name: spdrbot3`, `Version: 0.1.0`, `Editable project location: /home/rithwik/SpdrBot-main/source/spdrbot3`
+- Stage B legacy cleanup commit `3fbbdf6`: `34 files changed, 2 insertions(+), 1845 deletions(-)` (removed `check_cam.py`, `check_mdp.py`, `check_model.py`, `spdr.usd`, `spdr_stage.usd`, `spdrbot.py`, `spdrbot3_direct_project`, `spyderbot_minimal URDF/*`, `spyderbot_test.py`).

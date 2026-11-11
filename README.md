@@ -169,8 +169,8 @@ Authoritative hardware parameters aligned between physical hardware, URDF/USD as
 | **Effort Limit** | 2.942 N·m stall torque @ 12V (30 kg·cm) | **2.50 N·m** (85% thermal safety margin; saturation threshold 2.45 N·m) |
 | **Speed Limit** | 0.222 s / 60° = 45 RPM @ 12V | **4.71 rad/s** |
 | **Power Supply** | 3S LiPo Battery (11.4 V – 12.0 V, 12 A – 18 A total) | Multiplicative effort limit domain randomization ($\pm 15\%$) |
-| **Total Mass** | 4.166 kg native CAD (without DCAM), 5.0 kg weighed robot | **5.00 kg** nominal mass model with $\pm 10\%$ domain randomization |
-| **Kinematic Stance** | Coxa: $0.0^\circ$, Thigh: $0.0^\circ$, Foot: $-90.0^\circ$ ($-\pi/2$ rad) | Settled standing height $0.1427\text{ m}$; Gate minimum height $0.1284\text{ m}$ |
+| **Total Mass** | 4.166 kg native CAD (without DCAM), 5.0 kg assumed payload model | **5.00 kg** nominal mass model (`+0.8338 kg` on `base_link`, adjustable via `scripts/set_payload_mass.py`) with `[0.80, 1.10]` domain randomization (`4.00–5.50 kg`) |
+| **Kinematic Stance** | Coxa: $0.0^\circ$, Thigh: $0.0^\circ$, Foot: $-90.0^\circ$ ($-\pi/2$ rad) | Settled standing height **`0.1417 m`** (`5.00 kg`); Target **`0.1346 m`**; Gate minimum **`0.1275 m`** |
 | **Control Rate** | 50 Hz policy frequency ($\text{dt} = 0.005\text{s}$, $\text{decimation} = 4$) | Delay: 0–2 steps (0–40 ms); Slew rate limit: 6.0°/step (5.24 rad/s) |
 | **Servo Bus** | 1 Mbaud serial bus (`/dev/ttyUSB0`) | Joint ID addressing: $\text{ID} = 3(\text{leg} - 1) + k$ ($k \in \{1, 2, 3\}$) |
 
@@ -253,11 +253,11 @@ To guarantee direct sim-to-real transferability, the Actor network does not obse
 | Reward Term | Weight | Purpose |
 |---|---|---|
 | `track_lin_vel_xy_exp` | $+2.0$ | Exponential tracking of commanded forward and lateral velocity ($\sigma = 0.13$ m/s). |
-| `track_ang_vel_z_exp` | $+0.5$ | Exponential tracking of commanded yaw turning rate ($\sigma = 0.25$ rad/s). |
-| `base_height_shaped` | $+1.0$ | Quadratic exponential attractor to target standing height ($0.1356$ m) with barrier penalty below gate height ($0.1284$ m). |
+| `track_ang_vel_z_exp` | $+1.25$ | Exponential tracking of commanded yaw turning rate ($\sigma = 0.40$ rad/s). |
+| `base_height_shaped` | $+1.0$ | Quadratic exponential attractor to target standing height ($0.1346$ m) with barrier penalty below gate height ($0.1275$ m). |
 | `termination_penalty` | $-200.0$ | Severe penalty for roll/pitch flip ($>68.8^\circ$), chassis contact, or NaN state. |
-| `torque_limit` | $-0.5$ | Soft quadratic penalty when joint torque exceeds $2.45$ N·m (98% of 2.50 N·m limit). |
-| `fewer_than_3_feet_contact` | $-0.5$ | Penalizes having fewer than 3 feet on the ground to preserve static stability. |
+| `torque_limit` | $-0.5$ | Soft quadratic penalty when joint torque exceeds $2.10$ N·m (84% of 2.50 N·m limit). |
+| `fewer_than_3_feet_contact` | $-1.0$ | Penalizes having fewer than 3 feet on the ground to preserve static stability. |
 | `fewer_than_4_feet_contact` | $-0.05$ | Regularization encouraging robust support polygon formation. |
 | `feet_air_time` | $+0.25$ | Rewires swing-phase foot air time during locomotion to establish stepping cadence. |
 | `foot_tip_clearance` | $+0.1$ | Rewards foot clearance up to $5.0$ cm during leg swing phase. |
@@ -294,9 +294,12 @@ The terrain generator features 7 terrain columns across 10 progressive difficult
 
 ## Empirical Verification & Gate Performance
 
+> [!NOTE]
+> **Current Status (`2026-11-11`)**: After applying the `5.0000 kg` payload model (`b58c52c`) and amending Stage 1/Stage 2 evaluation metrics (`52685d4`, `1462e4f`, `5cfc643`), Stage 1 currently scores **`13/15 PASS`** (best of 4 probes: Probe 4 `2026-11-11_22-30-05/model_599.pt`) and **`FAIL` / `NOT READY`** on Forward (`0.0079 m/s`) and Strafe (`35.0%`), while the previous Stage 2 `GO` verdict has been **RETRACTED** (`NOT READY`). See [`docs/STAGE1_READINESS_REPORT.md`](docs/STAGE1_READINESS_REPORT.md) and [`docs/STAGE2_DIAG_REPORT.md`](docs/STAGE2_DIAG_REPORT.md) for current numbers. The tables below are preserved as the **historical pre-5.0 kg snapshot** (`2026-11-07`, `model_1198.pt`).
+
 All gate thresholds are strictly frozen and verified automatically across simulation checkpoints.
 
-### Stage 1 Flat Locomotion Gate Results
+### Historical Snapshot (`2026-11-07`, Pre-5.0 kg Payload): Stage 1 Flat Locomotion Gate Results
 
 Evaluated with `scripts/chunk_check.py` on the Stage 2 multi-terrain checkpoint (`model_1198.pt`):
 
