@@ -9,6 +9,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
@@ -473,6 +474,13 @@ class TerminationsCfg:
 
 
 @configclass
+class FlatCurriculumCfg:
+    """Curriculum schedule ramping harsh penalty weights from 0.1 (iter 0) to 1.0 (iter 800)."""
+
+    penalty_scale = CurrTerm(func=zoe_mdp.penalty_scale_ramp)
+
+
+@configclass
 class ZoeHexapodFlatDeployEnvCfg(ManagerBasedRLEnvCfg):
     """Stage 1 Environment configuration."""
     scene: ZoeSceneCfg = ZoeSceneCfg(num_envs=1024, env_spacing=2.5)
@@ -482,6 +490,7 @@ class ZoeHexapodFlatDeployEnvCfg(ManagerBasedRLEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
+    curriculum: FlatCurriculumCfg = FlatCurriculumCfg()
 
     def __post_init__(self):
         self.decimation = 4

@@ -420,3 +420,34 @@ def test_penalty_scale_ramp():
     assert abs(scale_1000 - 1.00) < 1e-4
     assert abs(env.reward_manager.get_term_cfg("torque_limit").weight - (-2.00)) < 1e-4
 
+
+def test_flat_env_wires_penalty_scale_ramp():
+    """Verify env_cfg_flat.py wires penalty_scale = CurrTerm(func=zoe_mdp.penalty_scale_ramp) cleanly."""
+    import ast
+    import os
+
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    cfg_path = os.path.join(
+        repo_root, "source/spdrbot3/spdrbot3/tasks/manager_based/zoe_deploy/env_cfg_flat.py"
+    )
+    with open(cfg_path, "r") as f:
+        source = f.read()
+
+    assert "penalty_scale_ramp" in source
+    tree = ast.parse(source)
+    flat_cls = None
+    curr_cls = None
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "FlatCurriculumCfg":
+            curr_cls = node
+        if isinstance(node, ast.ClassDef) and node.name == "ZoeHexapodFlatDeployEnvCfg":
+            flat_cls = node
+
+    assert curr_cls is not None, "FlatCurriculumCfg not found in env_cfg_flat.py"
+    assert flat_cls is not None, "ZoeHexapodFlatDeployEnvCfg not found in env_cfg_flat.py"
+    curr_src = ast.get_source_segment(source, curr_cls)
+    flat_src = ast.get_source_segment(source, flat_cls)
+    assert "penalty_scale" in curr_src and "penalty_scale_ramp" in curr_src
+    assert "curriculum: FlatCurriculumCfg" in flat_src
+
+

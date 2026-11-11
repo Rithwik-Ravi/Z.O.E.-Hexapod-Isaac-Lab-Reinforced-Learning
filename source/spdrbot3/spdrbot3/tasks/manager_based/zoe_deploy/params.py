@@ -194,7 +194,7 @@ class ZoeRewardParams:
     stand_still_posture: float = -0.5
     stand_still_feet_grounded: float = 1.0  # Reward fraction of grounded feet when cmd < 0.05
     joint_vel_limit: float = -0.01
-    torque_limit: float = -0.5
+    torque_limit: float = -1.0  # Probe P4 value (-1.0 with penalty_scale_ramp 0.1->1.0 over 800 iters, Task 4)
     torque_soft_limit_nm: float = 2.10  # 2.10 N.m soft threshold (84% of 2.50 N.m effort limit)
 
 
