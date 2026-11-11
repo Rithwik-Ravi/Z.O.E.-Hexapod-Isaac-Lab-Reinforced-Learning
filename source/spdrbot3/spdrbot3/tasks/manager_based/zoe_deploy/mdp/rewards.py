@@ -48,8 +48,10 @@ def feet_air_time_gated(
     air_time_reward = torch.sum((last_air_time - threshold) * first_contact.float(), dim=1)
 
     cmd = env.command_manager.get_command(command_name)
-    cmd_norm = torch.norm(cmd[:, :2], dim=-1)
-    gated_reward = air_time_reward * (cmd_norm > 0.05).float()
+    # Gate on combined linear + angular command speed (matching stand_still_*'s cmd_speed)
+    # so pure-yaw and yaw-dominant commands incentivize foot stepping rather than keeping 6 feet planted.
+    cmd_speed = torch.norm(cmd[:, :2], dim=-1) + torch.abs(cmd[:, 2])
+    gated_reward = air_time_reward * (cmd_speed > 0.05).float()
     return gated_reward
 
 
@@ -358,8 +360,9 @@ def foot_tip_clearance_reward(
     name = getattr(asset_cfg, "name", "robot")
     robot = env.scene[name]
     cmd = env.command_manager.get_command(command_name)
-    cmd_norm = torch.norm(cmd[:, :2], dim=1)
-    is_walking = (cmd_norm > 0.05).float()
+    # Include |wz| alongside |v_xy| so pure-yaw and yaw-dominant commands also reward swing clearance.
+    cmd_speed = torch.norm(cmd[:, :2], dim=1) + torch.abs(cmd[:, 2])
+    is_walking = (cmd_speed > 0.05).float()
 
     contact_sensor = env.scene[sensor_cfg.name]
     net_forces_z = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]

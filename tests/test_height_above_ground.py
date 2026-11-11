@@ -14,6 +14,7 @@ from spdrbot3.tasks.manager_based.zoe_deploy.mdp import rewards as zoe_rewards
 from spdrbot3.tasks.manager_based.zoe_deploy.mdp import observations as zoe_obs
 from spdrbot3.tasks.manager_based.zoe_deploy.mdp.rewards import (
     base_height_shaped,
+    feet_air_time_gated,
     foot_clearance_relative,
     foot_tip_clearance_reward,
     ground_height_from_feet,
@@ -217,3 +218,51 @@ def test_unused_base_height_l2_deleted_and_no_raw_world_z_in_rewards():
         src = inspect.getsource(fn)
         assert "height_above_ground" in src
         assert "root_pos_w[:, 2]" not in src
+
+
+def test_stepping_rewards_active_on_pure_yaw_and_off_when_stopped():
+    """Verify feet_air_time_gated and foot_tip_clearance_reward trigger on pure yaw as well as linear walk."""
+    n_envs = 3
+    root_z = torch.full((n_envs,), 0.1417, dtype=torch.float32)
+    ground_z = torch.zeros((n_envs, 6), dtype=torch.float32)
+    robot = _DummyRobot(root_z, ground_z)
+    # Lift feet 0 and 3 to target clearance 0.05m
+    robot.data.body_pos_w[:, [0, 3], 2] += 0.05
+
+    forces_z = torch.full((n_envs, 6), 10.0, dtype=torch.float32)
+    forces_z[:, [0, 3]] = 0.0
+    contact_sensor = _DummyContactSensor(forces_z)
+    contact_sensor.data.last_air_time = torch.full((n_envs, 6), 0.25, dtype=torch.float32)
+    first_contact = torch.zeros((n_envs, 6), dtype=torch.bool)
+    first_contact[:, [1, 4]] = True
+    contact_sensor.compute_first_contact = lambda dt: first_contact
+
+    # Env 0: zero command (stopped); Env 1: forward walk; Env 2: pure yaw 0.40 rad/s
+    cmd = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [0.15, 0.0, 0.0],
+            [0.0, 0.0, 0.40],
+        ],
+        dtype=torch.float32,
+    )
+    scene = _DummyScene(
+        {"robot": robot, "contact_forces": contact_sensor},
+        terrain_type="plane",
+        env_origins=torch.zeros((n_envs, 3), dtype=torch.float32),
+    )
+    env = _DummyEnv(scene, cmd=cmd)
+    env.step_dt = 0.02
+
+    robot_cfg = _DummyCfg("robot", [0, 1, 2, 3, 4, 5])
+    contact_cfg = _DummyCfg("contact_forces", [0, 1, 2, 3, 4, 5])
+
+    clr = foot_tip_clearance_reward(env, sensor_cfg=contact_cfg, target_clearance=0.05, asset_cfg=robot_cfg)
+    assert clr[0].item() == 0.0
+    assert abs(clr[1].item() - 2.0) < 1e-5
+    assert abs(clr[2].item() - 2.0) < 1e-5
+
+    air = feet_air_time_gated(env, command_name="base_velocity", sensor_cfg=contact_cfg, threshold=0.15)
+    assert air[0].item() == 0.0
+    assert abs(air[1].item() - 0.20) < 1e-5
+    assert abs(air[2].item() - 0.20) < 1e-5

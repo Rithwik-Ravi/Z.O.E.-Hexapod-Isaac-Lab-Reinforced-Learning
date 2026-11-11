@@ -171,9 +171,9 @@ class ZoeEventParams:
 @dataclass
 class ZoeRewardParams:
     track_lin_vel_xy_exp: float = 2.0
-    track_ang_vel_z_exp: float = 1.0  # Increased from 0.5 to 1.0 to give competitive turning incentive against linear motion
+    track_ang_vel_z_exp: float = 1.5  # Boosted from 1.0 (with std=0.40) so pure-yaw gradient overcomes foot-pivot/slip resistance
     track_lin_vel_std: float = 0.13  # Width ~0.13 m/s so standing still earns <= 25% reward at 0.15 m/s cmd
-    track_ang_vel_std: float = 0.25  # Width ~0.25 rad/s
+    track_ang_vel_std: float = 0.40  # Widened from 0.25 to avoid exp saturation across yaw commands up to 0.6 rad/s
     termination_penalty: float = -200.0
     dof_torques_l2: float = -5e-3
     action_rate_l2: float = -0.05
@@ -181,7 +181,7 @@ class ZoeRewardParams:
     dof_pos_limits: float = -1.0
     feet_air_time: float = 0.25
     feet_air_time_threshold: float = 0.15  # seconds
-    fewer_than_3_feet_contact: float = -0.5
+    fewer_than_3_feet_contact: float = -1.0  # Strengthened from -0.5 to close the 98.83% -> >=99% >=3-feet tripod support gap
     fewer_than_4_feet_contact: float = -0.05
     undesired_contacts: float = -1.0
     base_height_l2: float = -50.0
@@ -194,7 +194,7 @@ class ZoeRewardParams:
     stand_still_posture: float = -0.5
     stand_still_feet_grounded: float = 1.0  # Reward fraction of grounded feet when cmd < 0.05
     joint_vel_limit: float = -0.01
-    torque_limit: float = -1.0  # Probe P4 value (-1.0 with penalty_scale_ramp 0.1->1.0 over 800 iters, Task 4)
+    torque_limit: float = -0.5  # Restored from -1.0 (Probe P4 throttled to 0.094 m/s); retains penalty_scale_ramp + 2.10 N.m threshold
     torque_soft_limit_nm: float = 2.10  # 2.10 N.m soft threshold (84% of 2.50 N.m effort limit)
 
 
