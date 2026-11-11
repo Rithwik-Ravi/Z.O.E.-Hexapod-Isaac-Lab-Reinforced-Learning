@@ -171,9 +171,9 @@ class ZoeEventParams:
 @dataclass
 class ZoeRewardParams:
     track_lin_vel_xy_exp: float = 2.0
-    track_ang_vel_z_exp: float = 1.25  # Balanced turning weight (with std=0.40) while keeping linear 2.0 clearly primary
+    track_ang_vel_z_exp: float = 1.0  # Probe A (P1 baseline weight)
     track_lin_vel_std: float = 0.13  # Width ~0.13 m/s so standing still earns <= 25% reward at 0.15 m/s cmd
-    track_ang_vel_std: float = 0.40  # Widened from 0.25 to avoid exp saturation across yaw commands up to 0.6 rad/s
+    track_ang_vel_std: float = 0.25  # Probe A (P1 baseline std)
     termination_penalty: float = -200.0
     dof_torques_l2: float = -5e-3
     action_rate_l2: float = -0.05
@@ -181,7 +181,7 @@ class ZoeRewardParams:
     dof_pos_limits: float = -1.0
     feet_air_time: float = 0.25
     feet_air_time_threshold: float = 0.15  # seconds
-    fewer_than_3_feet_contact: float = -1.0  # Strengthened from -0.5 to close the 98.83% -> >=99% >=3-feet tripod support gap
+    fewer_than_3_feet_contact: float = -0.5  # Probe A (P1 baseline weight)
     fewer_than_4_feet_contact: float = -0.05
     undesired_contacts: float = -1.0
     base_height_l2: float = -50.0
