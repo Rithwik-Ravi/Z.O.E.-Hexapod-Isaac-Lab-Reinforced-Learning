@@ -15,6 +15,16 @@ from isaaclab.envs.mdp.commands.velocity_command import UniformVelocityCommand
 from isaaclab.utils import configclass
 
 
+def _quat_apply_wxyz(quat: torch.Tensor, vec: torch.Tensor) -> torch.Tensor:
+    """Rotate 3D vectors using (w, x, y, z) quaternions (pure PyTorch, handles 180-deg roll cleanly)."""
+    shape = vec.shape
+    quat = quat.reshape(-1, 4)
+    vec = vec.reshape(-1, 3)
+    xyz = quat[:, 1:]
+    t = xyz.cross(vec, dim=-1) * 2.0
+    return (vec + quat[:, 0:1] * t + xyz.cross(t, dim=-1)).view(shape)
+
+
 class ZoeUniformVelocityCommand(UniformVelocityCommand):
     """Command generator ensuring a guaranteed fraction of yaw-dominant commands.
 
@@ -238,14 +248,20 @@ class ZoeTerrainTwoGroupCommand(UniformVelocityCommand):
                 self._pos_start_initialized[uninit] = True
 
         dt = float(self._env.step_dt)
-        # 1. Integrate commanded displacement vector in world frame: R(yaw_t) @ cmd_b
-        yaw = self.robot.data.heading_w
-        cos_yaw = torch.cos(yaw)
-        sin_yaw = torch.sin(yaw)
+        # 1. Integrate commanded displacement vector in world frame: R(q_t) @ cmd_b
         vx_b = self.vel_command_b[:, 0]
         vy_b = self.vel_command_b[:, 1]
-        cmd_w_x = cos_yaw * vx_b - sin_yaw * vy_b
-        cmd_w_y = sin_yaw * vx_b + cos_yaw * vy_b
+        if hasattr(self.robot.data, "root_quat_w"):
+            cmd_vec_b = torch.stack([vx_b, vy_b, torch.zeros_like(vx_b)], dim=-1)
+            cmd_vec_w = _quat_apply_wxyz(self.robot.data.root_quat_w, cmd_vec_b)
+            cmd_w_x = cmd_vec_w[:, 0]
+            cmd_w_y = cmd_vec_w[:, 1]
+        else:
+            yaw = self.robot.data.heading_w
+            cos_yaw = torch.cos(yaw)
+            sin_yaw = torch.sin(yaw)
+            cmd_w_x = cos_yaw * vx_b - sin_yaw * vy_b
+            cmd_w_y = sin_yaw * vx_b + cos_yaw * vy_b
 
         self.cmd_disp_w[:, 0] += cmd_w_x * dt
         self.cmd_disp_w[:, 1] += cmd_w_y * dt

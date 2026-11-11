@@ -83,6 +83,7 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, RslRlOnPolicyRunnerCfg
 from isaaclab.utils.assets import retrieve_file_path
 import spdrbot3.tasks  # noqa: F401
 from spdrbot3.tasks.manager_based.zoe_deploy.params import ZOE_PARAMS
+from spdrbot3.tasks.manager_based.zoe_deploy.mdp.commands import _quat_apply_wxyz
 from spdrbot3.tasks.manager_based.zoe_deploy.mdp.curriculum import get_column_terrain_names
 from spdrbot3.tasks.manager_based.zoe_deploy.mdp.rewards import height_above_ground
 
@@ -270,6 +271,9 @@ def run_terrain_check():
         env_cfg.events.push_robot = None
     if hasattr(env_cfg, "curriculum") and hasattr(env_cfg.curriculum, "terrain_levels"):
         env_cfg.curriculum.terrain_levels = None
+    # Prevent time_out auto-reset from teleporting robots back to spawn at step == num_steps - 1
+    if hasattr(env_cfg, "episode_length_s"):
+        env_cfg.episode_length_s = max(float(env_cfg.episode_length_s), float(args_cli.episode_s) + 5.0)
 
     agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task.split(":")[-1], args_cli)
 
@@ -362,6 +366,7 @@ def run_terrain_check():
 
     # Progress accounting buffers: net displacement in world frame (Task 6)
     pos_start_w = robot.data.root_pos_w[:, :2].clone()
+    pos_end_w = pos_start_w.clone()
     cmd_disp_w = torch.zeros((total_envs, 2), device=unwrapped.device, dtype=torch.float32)
     commanded_travel = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.float32)
     achieved_travel = torch.zeros(total_envs, device=unwrapped.device, dtype=torch.float32)
@@ -397,15 +402,13 @@ def run_terrain_check():
             active_steps += alive.long()
 
             # World-frame commanded displacement vector integration (Task 6)
-            yaw = robot.data.heading_w
-            cos_yaw = torch.cos(yaw)
-            sin_yaw = torch.sin(yaw)
+            # Use full 3D root_quat_w so nominal 180-deg X roll and slope tilts are exact
             vx_b = cmd[:, 0]
             vy_b = cmd[:, 1]
-            cmd_w_x = cos_yaw * vx_b - sin_yaw * vy_b
-            cmd_w_y = sin_yaw * vx_b + cos_yaw * vy_b
-            cmd_disp_w[:, 0] += torch.where(alive, cmd_w_x * dt, torch.zeros_like(cmd_w_x))
-            cmd_disp_w[:, 1] += torch.where(alive, cmd_w_y * dt, torch.zeros_like(cmd_w_y))
+            cmd_vec_b = torch.stack([vx_b, vy_b, torch.zeros_like(vx_b)], dim=-1)
+            cmd_vec_w = _quat_apply_wxyz(robot.data.root_quat_w, cmd_vec_b)
+            cmd_disp_w[:, 0] += torch.where(alive, cmd_vec_w[:, 0] * dt, torch.zeros_like(vx_b))
+            cmd_disp_w[:, 1] += torch.where(alive, cmd_vec_w[:, 1] * dt, torch.zeros_like(vy_b))
 
             # Old step-integrated progress tracking (for OLD vs NEW comparison)
             cmd_xy = cmd[:, :2]
@@ -441,6 +444,7 @@ def run_terrain_check():
                     slope_rolls.append(r_deg.cpu().numpy())
                     slope_pitches.append(p_deg.cpu().numpy())
 
+            pos_before_step_w = robot.data.root_pos_w[:, :2].clone()
             step_res = env.step(actions)
             obs = step_res[0]
 
@@ -462,11 +466,20 @@ def run_terrain_check():
                     term_nan |= newly_terminated & nan_t
                 except Exception:
                     pass
+                pos_end_w = torch.where(newly_terminated.unsqueeze(-1), pos_before_step_w, pos_end_w)
                 alive = alive & (~newly_terminated)
+
+            not_reset = alive & (~unwrapped.reset_buf)
+            if not_reset.any():
+                post_xy = robot.data.root_pos_w[:, :2]
+                pos_end_w = torch.where(not_reset.unsqueeze(-1), post_xy, pos_end_w)
+                dist_post = torch.norm(post_xy - assigned_origins_xy, dim=-1)
+                final_dist = torch.where(not_reset, dist_post, final_dist)
+                max_dist = torch.where(not_reset, torch.maximum(max_dist, dist_post), max_dist)
 
     cmd_norm = torch.norm(cmd_disp_w, dim=-1)
     commanded_travel = cmd_norm
-    actual_disp_w = robot.data.root_pos_w[:, :2] - pos_start_w
+    actual_disp_w = pos_end_w - pos_start_w
     safe_cmd = torch.clamp(commanded_travel, min=1e-4)
     cmd_unit_w = cmd_disp_w / safe_cmd.unsqueeze(-1)
     achieved_travel = torch.sum(actual_disp_w * cmd_unit_w, dim=-1)

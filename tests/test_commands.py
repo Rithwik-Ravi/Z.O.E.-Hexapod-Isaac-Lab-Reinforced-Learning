@@ -9,6 +9,7 @@ import torch
 
 from spdrbot3.tasks.manager_based.zoe_deploy.params import ZOE_PARAMS
 from spdrbot3.tasks.manager_based.zoe_deploy.mdp.commands import (
+    _quat_apply_wxyz,
     ZoeUniformVelocityCommand,
     ZoeUniformVelocityCommandCfg,
     ZoeTerrainTwoGroupCommand,
@@ -86,6 +87,14 @@ def test_two_group_command_split_and_distributions():
         def __init__(self, n):
             self.root_lin_vel_b = torch.zeros((n, 3), dtype=torch.float32)
             self.root_ang_vel_b = torch.zeros((n, 3), dtype=torch.float32)
+            self.root_pos_w = torch.zeros((n, 3), dtype=torch.float32)
+            torch.manual_seed(123)
+            yaw = (torch.rand(n, dtype=torch.float32) * 2.0 - 1.0) * 3.14159265
+            self.heading_w = yaw
+            # Nominal 180-deg X roll + yaw: (0, cos(yaw/2), sin(yaw/2), 0)
+            self.root_quat_w = torch.zeros((n, 4), dtype=torch.float32)
+            self.root_quat_w[:, 1] = torch.cos(0.5 * yaw)
+            self.root_quat_w[:, 2] = torch.sin(0.5 * yaw)
 
     class DummyRobot:
         def __init__(self, n):
@@ -164,19 +173,32 @@ def test_two_group_command_split_and_distributions():
     yaw_fraction = yaw_dominant.float().mean().item()
     assert yaw_fraction >= 0.23, f"Expected >= 25% yaw-dominant among non-standing Group S, got {yaw_fraction * 100:.1f}%"
 
-    # 5. Step-integrated Progress Tracking
-    # Set robot velocities to match command for first 100 envs
+    # 5. World-frame Net Displacement Progress Tracking (turning + strafe + 180-deg roll)
+    # Set robot body velocities to match command
     env.robot.data.root_lin_vel_b[:, :2] = cmds[:, :2]
 
+    cmd_gen.cmd_disp_w.zero_()
     cmd_gen.commanded_travel.zero_()
     cmd_gen.achieved_travel.zero_()
+    cmd_gen.pos_start_w.copy_(env.robot.data.root_pos_w[:, :2])
+    cmd_gen._pos_start_initialized.fill_(True)
 
-    # Step 50 times (50 * 0.02 = 1.0 s)
+    # Step 50 times (50 * 0.02 = 1.0 s) while rotating yaw according to wz
+    yaw = env.robot.data.heading_w.clone()
     for _ in range(50):
+        # Robot physically moves along R(q_t) @ cmd_b and turns by wz * dt
+        vel_b_3d = torch.zeros((num_envs, 3), dtype=torch.float32)
+        vel_b_3d[:, :2] = cmds[:, :2]
+        vel_w = _quat_apply_wxyz(env.robot.data.root_quat_w, vel_b_3d)
+        env.robot.data.root_pos_w[:, :2] += vel_w[:, :2] * env.step_dt
         cmd_gen._update_metrics()
+        yaw = yaw + cmds[:, 2] * env.step_dt
+        env.robot.data.heading_w = yaw
+        env.robot.data.root_quat_w[:, 1] = torch.cos(0.5 * yaw)
+        env.robot.data.root_quat_w[:, 2] = torch.sin(0.5 * yaw)
 
-    # In moving envs, commanded travel should equal achieved travel
-    non_zero_cmd = torch.norm(cmds[:, :2], dim=-1) > 0.01
+    # In moving envs with non-trivial commanded displacement, net progress ratio == 1.0
+    non_zero_cmd = cmd_gen.commanded_travel > 0.01
     assert non_zero_cmd.any()
     ratio = cmd_gen.achieved_travel[non_zero_cmd] / cmd_gen.commanded_travel[non_zero_cmd]
     assert torch.allclose(ratio, torch.ones_like(ratio), atol=1e-3)
