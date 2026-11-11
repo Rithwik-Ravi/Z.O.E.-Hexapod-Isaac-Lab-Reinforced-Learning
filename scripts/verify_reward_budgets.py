@@ -77,9 +77,9 @@ def print_reward_comparison():
     rew_stand_tlim = 0.0
     print(f"{'torque_limit':<32} | {rew_walk_tlim:+18.2f}  | {rew_stand_tlim:+18.2f}")
 
-    # 11. stand_still_posture / stand_still_feet_grounded (active only when cmd < 0.05)
+    # 11. stand_still_posture / stand_still_feet_grounded (active only when |cmd_xy| < 0.05 AND |cmd_yaw| < 0.05)
     rew_walk_stand = 0.0
-    rew_stand_stand = 0.0  # Not awarded because cmd = 0.20 m/s > 0.05
+    rew_stand_stand = 0.0  # Not awarded because |cmd_xy| = 0.20 m/s >= 0.05
     print(f"{'stand_still_rewards':<32} | {rew_walk_stand:+18.2f}  | {rew_stand_stand:+18.2f}")
 
     # TOTALS

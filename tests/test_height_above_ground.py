@@ -266,3 +266,93 @@ def test_stepping_rewards_active_on_pure_yaw_and_off_when_stopped():
     assert air[0].item() == 0.0
     assert abs(air[1].item() - 0.20) < 1e-5
     assert abs(air[2].item() - 0.20) < 1e-5
+
+
+class _GatingContactData:
+    def __init__(self, forces_z: torch.Tensor, last_air_time: torch.Tensor):
+        n, b = forces_z.shape
+        self.net_forces_w = torch.zeros((n, b, 3), dtype=torch.float32)
+        self.net_forces_w[:, :, 2] = forces_z
+        self.last_air_time = last_air_time
+
+
+class _GatingContactSensor:
+    def __init__(self, forces_z: torch.Tensor, last_air_time: torch.Tensor, first_contact: torch.Tensor):
+        self.data = _GatingContactData(forces_z, last_air_time)
+        self.body_names = [f"NFOOT{i}" for i in range(1, 7)]
+        self._first_contact = first_contact
+
+    def compute_first_contact(self, dt: float) -> torch.Tensor:
+        return self._first_contact
+
+
+def test_command_stopped_definition_and_all_gated_rewards():
+    """Verify stopped means |cmd_xy| < 0.05 AND |cmd_yaw| < 0.05 across all 4 gated reward terms."""
+    from spdrbot3.tasks.manager_based.zoe_deploy.mdp.rewards import (
+        is_cmd_stopped,
+        stand_still_feet_grounded_reward,
+        stand_still_posture_penalty,
+    )
+
+    cmds = torch.tensor(
+        [
+            [0.00, 0.00, 0.00],    # stopped
+            [0.03, 0.00, 0.03],    # stopped (previously misclassified by additive sum 0.06 > 0.05)
+            [0.049, 0.00, 0.049],  # stopped
+            [0.03, 0.03, 0.04],    # stopped (|xy|=0.0424 < 0.05 AND |yaw|=0.04 < 0.05)
+            [0.05, 0.00, 0.00],    # walking (boundary |xy| == 0.05)
+            [0.00, 0.00, 0.05],    # walking (boundary |yaw| == 0.05)
+            [0.04, 0.04, 0.00],    # walking (|xy|=0.0566 >= 0.05)
+            [0.15, 0.00, 0.00],    # walking
+            [0.00, 0.00, 0.40],    # pure yaw (walking)
+        ],
+        dtype=torch.float32,
+    )
+    expected_stopped = torch.tensor(
+        [True, True, True, True, False, False, False, False, False],
+        dtype=torch.bool,
+    )
+    actual_stopped = is_cmd_stopped(cmds, 0.05)
+    assert torch.equal(actual_stopped, expected_stopped)
+
+    n = cmds.shape[0]
+    # Half feet grounded (10 N) and half in swing at 5 cm height (0 N)
+    forces_z = torch.tensor([[10.0, 0.0, 10.0, 0.0, 10.0, 0.0]] * n, dtype=torch.float32)
+    last_air_time = torch.full((n, 6), 0.30, dtype=torch.float32)
+    first_contact = torch.ones((n, 6), dtype=torch.bool)
+    sensor = _GatingContactSensor(forces_z, last_air_time, first_contact)
+
+    root_z = torch.full((n,), 0.1356, dtype=torch.float32)
+    ground_feet = torch.tensor([[0.0, 0.05, 0.0, 0.05, 0.0, 0.05]] * n, dtype=torch.float32)
+    robot = _DummyRobot(root_z, ground_feet)
+    robot.data.joint_pos = torch.full((n, 18), 0.10, dtype=torch.float32)
+    robot.data.default_joint_pos = torch.zeros((n, 18), dtype=torch.float32)
+
+    scene = _DummyScene({"robot": robot, "contact_forces": sensor}, terrain_type="plane")
+    env = _DummyEnv(scene, cmd=cmds)
+    env.step_dt = 0.02
+
+    sensor_cfg = _DummyCfg(name="contact_forces", body_ids=[0, 1, 2, 3, 4, 5])
+    robot_cfg = _DummyCfg(name="robot", body_ids=[0, 1, 2, 3, 4, 5])
+
+    rew_air = feet_air_time_gated(env, "base_velocity", sensor_cfg, threshold=0.15)
+    rew_clr = foot_tip_clearance_reward(
+        env, sensor_cfg, command_name="base_velocity", target_clearance=0.05, std=0.02, asset_cfg=robot_cfg
+    )
+    rew_posture = stand_still_posture_penalty(
+        env, sensor_cfg, command_name="base_velocity", cmd_threshold=0.05, asset_cfg=robot_cfg
+    )
+    rew_grounded = stand_still_feet_grounded_reward(
+        env, sensor_cfg, command_name="base_velocity", cmd_threshold=0.05
+    )
+
+    stopped_idx = expected_stopped
+    walk_idx = ~expected_stopped
+    assert torch.all(rew_air[stopped_idx] == 0.0)
+    assert torch.all(rew_air[walk_idx] > 0.0)
+    assert torch.all(rew_clr[stopped_idx] == 0.0)
+    assert torch.all(rew_clr[walk_idx] > 0.0)
+    assert torch.all(rew_posture[stopped_idx] > 0.0)
+    assert torch.all(rew_posture[walk_idx] == 0.0)
+    assert torch.allclose(rew_grounded[stopped_idx], torch.full_like(rew_grounded[stopped_idx], 0.5))
+    assert torch.all(rew_grounded[walk_idx] == 0.0)

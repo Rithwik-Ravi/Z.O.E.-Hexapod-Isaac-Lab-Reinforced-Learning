@@ -35,6 +35,11 @@ def fewer_than_4_feet_contact(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg
     return torch.square(def_count)
 
 
+def is_cmd_stopped(cmd: torch.Tensor, cmd_threshold: float = 0.05) -> torch.Tensor:
+    """Return boolean mask of envs where BOTH linear and yaw commands are below threshold."""
+    return (torch.norm(cmd[:, :2], dim=-1) < cmd_threshold) & (torch.abs(cmd[:, 2]) < cmd_threshold)
+
+
 def feet_air_time_gated(
     env: ManagerBasedRLEnv,
     command_name: str,
@@ -48,10 +53,8 @@ def feet_air_time_gated(
     air_time_reward = torch.sum((last_air_time - threshold) * first_contact.float(), dim=1)
 
     cmd = env.command_manager.get_command(command_name)
-    # Gate on combined linear + angular command speed (matching stand_still_*'s cmd_speed)
-    # so pure-yaw and yaw-dominant commands incentivize foot stepping rather than keeping 6 feet planted.
-    cmd_speed = torch.norm(cmd[:, :2], dim=-1) + torch.abs(cmd[:, 2])
-    gated_reward = air_time_reward * (cmd_speed > 0.05).float()
+    # Exact complement of is_cmd_stopped: walk/yaw/turn when |cmd_xy| >= 0.05 OR |cmd_yaw| >= 0.05.
+    gated_reward = air_time_reward * (~is_cmd_stopped(cmd, 0.05)).float()
     return gated_reward
 
 
@@ -360,9 +363,8 @@ def foot_tip_clearance_reward(
     name = getattr(asset_cfg, "name", "robot")
     robot = env.scene[name]
     cmd = env.command_manager.get_command(command_name)
-    # Include |wz| alongside |v_xy| so pure-yaw and yaw-dominant commands also reward swing clearance.
-    cmd_speed = torch.norm(cmd[:, :2], dim=1) + torch.abs(cmd[:, 2])
-    is_walking = (cmd_speed > 0.05).float()
+    # Exact complement of is_cmd_stopped so pure-yaw and walking commands reward swing clearance.
+    is_walking = (~is_cmd_stopped(cmd, 0.05)).float()
 
     contact_sensor = env.scene[sensor_cfg.name]
     net_forces_z = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]
@@ -389,8 +391,7 @@ def stand_still_posture_penalty(
     name = getattr(asset_cfg, "name", "robot")
     robot = env.scene[name]
     cmd = env.command_manager.get_command(command_name)
-    cmd_speed = torch.norm(cmd[:, :2], dim=1) + torch.abs(cmd[:, 2])
-    is_stopped = (cmd_speed < cmd_threshold).float()
+    is_stopped = is_cmd_stopped(cmd, cmd_threshold).float()
 
     joint_dev = torch.sum(torch.square(robot.data.joint_pos - robot.data.default_joint_pos), dim=-1)
 
@@ -410,8 +411,7 @@ def stand_still_feet_grounded_reward(
 ) -> torch.Tensor:
     """When velocity command is near zero, reward the fraction of feet on the ground (N_down / 6.0)."""
     cmd = env.command_manager.get_command(command_name)
-    cmd_speed = torch.norm(cmd[:, :2], dim=1) + torch.abs(cmd[:, 2])
-    is_stopped = (cmd_speed < cmd_threshold).float()
+    is_stopped = is_cmd_stopped(cmd, cmd_threshold).float()
 
     contact_sensor = env.scene[sensor_cfg.name]
     net_forces_z = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]

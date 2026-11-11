@@ -192,7 +192,7 @@ class ZoeRewardParams:
     foot_tip_slip: float = -0.1
     foot_tip_clearance: float = 0.1
     stand_still_posture: float = -0.5
-    stand_still_feet_grounded: float = 1.0  # Reward fraction of grounded feet when cmd < 0.05
+    stand_still_feet_grounded: float = 1.0  # Reward fraction of grounded feet when |cmd_xy| < 0.05 AND |cmd_yaw| < 0.05
     joint_vel_limit: float = -0.01
     torque_limit: float = -0.5  # Restored from -1.0 (Probe P4 throttled to 0.094 m/s); retains penalty_scale_ramp + 2.10 N.m threshold
     torque_soft_limit_nm: float = 2.10  # 2.10 N.m soft threshold (84% of 2.50 N.m effort limit)
