@@ -71,12 +71,12 @@ def test_params_bounds():
 
 
 def test_mass_randomization_bounds():
-    """Verify mass scale ranges match Chunk-1 strict bisection (0.90, 1.10) during Task 3."""
+    """Verify that mass scale ranges are (0.80, 1.10) covering 4.0-5.5 kg around 5.0 kg."""
     base_min, base_max = ZOE_PARAMS.events.base_mass_scale_range
     body_min, body_max = ZOE_PARAMS.events.body_mass_scale_range
 
-    assert (base_min, base_max) == (0.90, 1.10)
-    assert (body_min, body_max) == (0.90, 1.10)
+    assert (base_min, base_max) == (0.80, 1.10)
+    assert (body_min, body_max) == (0.80, 1.10)
 
     # Reference nominal base link mass from audit report (2.5027 kg on new hexa_ir robot)
     ref_base_mass = ZOE_PARAMS.BASE_LINK_MASS_KG

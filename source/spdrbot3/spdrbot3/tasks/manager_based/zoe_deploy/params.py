@@ -155,8 +155,8 @@ class ZoeObsScaleParams:
 class ZoeEventParams:
     static_friction_range: tuple[float, float] = (0.4, 1.2)
     dynamic_friction_range: tuple[float, float] = (0.3, 1.0)
-    base_mass_scale_range: tuple[float, float] = (0.90, 1.10)  # Temporarily restored to Chunk-1 +-10% for Task 3 strict 1-var bisection; Task 7 restores (0.80, 1.10) before Chunk 1
-    body_mass_scale_range: tuple[float, float] = (0.90, 1.10)  # Temporarily restored to Chunk-1 +-10% for Task 3 strict 1-var bisection; Task 7 restores (0.80, 1.10) before Chunk 1
+    base_mass_scale_range: tuple[float, float] = (0.80, 1.10)  # Multiplicative scale 80-110% (covers 4.0-5.5 kg around 5.0 kg, Task 7)
+    body_mass_scale_range: tuple[float, float] = (0.80, 1.10)  # Multiplicative scale 80-110% (Task 7)
     base_com_offset_range: tuple[float, float] = (-0.015, 0.015)  # m
     actuator_kp_scale_range: tuple[float, float] = (0.70, 1.30)  # +-30%
     actuator_kd_scale_range: tuple[float, float] = (0.70, 1.30)  # +-30%
@@ -195,7 +195,7 @@ class ZoeRewardParams:
     stand_still_feet_grounded: float = 1.0  # Reward fraction of grounded feet when cmd < 0.05
     joint_vel_limit: float = -0.01
     torque_limit: float = -0.5
-    torque_soft_limit_nm: float = 2.10  # 2.10 N.m soft threshold (84% of 2.50 N.m effort limit, reverted from Chunk-1 1.95 N.m / -2.0 for Bisection P1)
+    torque_soft_limit_nm: float = 2.10  # 2.10 N.m soft threshold (84% of 2.50 N.m effort limit)
 
 
 @dataclass
