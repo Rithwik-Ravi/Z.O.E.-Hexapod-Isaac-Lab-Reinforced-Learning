@@ -243,7 +243,7 @@ actuator_assumptions:
   fitted_data_source: DATASHEET_ST3215_12V_ASSUMED_5KG_MASS
 provenance:
   task: Zoe-Hexapod-Flat-Deploy-v0
-  checkpoint: /home/rithwik/SpdrBot-main/logs/rsl_rl/zoe_hexapod_deploy/2026-11-05_19-51-02/model_599.pt
-  git_commit: 1cafe039a0d9c36a8cc03cead9b0c1d799421edf
+  checkpoint: /home/rithwik/SpdrBot-main/logs/rsl_rl/zoe_hexapod_deploy/2026-11-12_05-47-14/model_1499.pt
+  git_commit: 6e4a795f34392770db0b3ea341241346468815ca
   isaaclab_version: v2.3.2
-  date: '2026-11-05T20:46:58.756132'
+  date: '2026-11-12T06:39:38.632761'
